@@ -71,6 +71,7 @@ You have **FULL ACCESS** to the user's entire computer. You can read/write any f
 5. **Self-heal**: If a command fails, analyze the error and try a different approach.
 6. **Be honest**: If you can't do something, say so clearly.
 7. **No over-explaining**: Don't explain what you're about to do unless it's a complex or risky operation. Just do it and show the result.
+8. **Tool parameters**: When calling tools, NEVER pass null for any parameter. Simply OMIT optional parameters you don't need — do not include them at all.
 
 ## Platform Awareness
 - Detect the OS from system info and use platform-appropriate commands
@@ -387,15 +388,58 @@ export class VinsaAgent {
     let toolCallCount = 0;
 
     while (toolCallCount < maxToolCalls) {
-      // Call Groq with the specific model
-      const response = await this.client.chat.completions.create({
-        model: modelId,
-        messages,
-        tools: this.groqTools.length > 0 ? this.groqTools : undefined,
-        tool_choice: this.groqTools.length > 0 ? 'auto' : undefined,
-        temperature: 0.7,
-        max_tokens: 8192,
-      });
+      let response;
+      try {
+        // Call Groq with the specific model
+        response = await this.client.chat.completions.create({
+          model: modelId,
+          messages,
+          tools: this.groqTools.length > 0 ? this.groqTools : undefined,
+          tool_choice: this.groqTools.length > 0 ? 'auto' : undefined,
+          temperature: 0.7,
+          max_tokens: 8192,
+        });
+      } catch (apiErr) {
+        // ── Recover from tool_use_failed (LLM sent null for optional params) ──
+        const failedGen = apiErr?.error?.failed_generation;
+        if (apiErr.status === 400 && failedGen) {
+          const recovered = VinsaAgent._extractToolCalls(failedGen);
+          if (recovered.length > 0) {
+            // Build synthetic assistant + tool messages, execute the recovered calls
+            const syntheticToolCalls = recovered.map((tc, i) => ({
+              id: `recovered_${Date.now()}_${i}`,
+              type: 'function',
+              function: { name: tc.name, arguments: JSON.stringify(tc.parameters) },
+            }));
+            messages.push({ role: 'assistant', content: null, tool_calls: syntheticToolCalls });
+
+            for (const tc of syntheticToolCalls) {
+              const functionName = tc.function.name;
+              let functionArgs = {};
+              try { functionArgs = JSON.parse(tc.function.arguments || '{}'); } catch { functionArgs = {}; }
+              if (!functionArgs || typeof functionArgs !== 'object') functionArgs = {};
+              toolCallCount++;
+
+              if (onToolCall) onToolCall(functionName, functionArgs);
+              else printToolCall(functionName, functionArgs);
+
+              let result;
+              if (isPluginTool(functionName)) {
+                result = await executePlugin(functionName, functionArgs);
+              } else {
+                result = await executeTool(functionName, functionArgs);
+              }
+
+              if (onToolResult) onToolResult(result);
+              else printToolResult(result);
+
+              messages.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result) });
+            }
+            continue; // continue the agent while-loop for the LLM's next response
+          }
+        }
+        throw apiErr; // re-throw if we can't recover
+      }
 
       // Track token usage
       if (response.usage) {
@@ -423,6 +467,8 @@ export class VinsaAgent {
         const functionName = tc.function.name;
         let functionArgs = {};
         try { functionArgs = JSON.parse(tc.function.arguments || '{}'); } catch { functionArgs = {}; }
+        // Strip null/undefined values from args (safety net for schema compliance)
+        functionArgs = VinsaAgent._stripNulls(functionArgs);
         if (!functionArgs || typeof functionArgs !== 'object') functionArgs = {};
         toolCallCount++;
 
@@ -451,6 +497,47 @@ export class VinsaAgent {
     const finalText = 'I reached the maximum number of tool calls for this request. Here is what I found so far. Please ask me to continue if needed.';
     this.conversationHistory.push({ role: 'assistant', content: finalText });
     return finalText;
+  }
+
+  /**
+   * Extract tool calls from a Groq failed_generation string.
+   * Handles both pure JSON arrays and text-mixed responses.
+   */
+  static _extractToolCalls(failedGeneration) {
+    // Try direct JSON parse first (pure JSON array case)
+    try {
+      const parsed = JSON.parse(failedGeneration);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .filter(tc => tc && tc.name)
+          .map(tc => ({ name: tc.name, parameters: VinsaAgent._stripNulls(tc.parameters || {}) }));
+      }
+    } catch { /* not pure JSON, try regex extraction */ }
+
+    // Try to find an embedded JSON array in mixed text+JSON output
+    const match = failedGeneration.match(/\[[\s\S]*?\{[\s\S]*?"name"[\s\S]*?\}[\s\S]*?\]/);
+    if (match) {
+      try {
+        const parsed = JSON.parse(match[0]);
+        if (Array.isArray(parsed)) {
+          return parsed
+            .filter(tc => tc && tc.name)
+            .map(tc => ({ name: tc.name, parameters: VinsaAgent._stripNulls(tc.parameters || {}) }));
+        }
+      } catch { /* extraction failed */ }
+    }
+
+    return [];
+  }
+
+  /**
+   * Strip null and undefined values from an object (shallow).
+   */
+  static _stripNulls(obj) {
+    if (!obj || typeof obj !== 'object') return {};
+    return Object.fromEntries(
+      Object.entries(obj).filter(([, v]) => v !== null && v !== undefined)
+    );
   }
 
   async ask(prompt, { silent = false } = {}) {
