@@ -5,11 +5,15 @@
  */
 import Conf from 'conf';
 import chalk from 'chalk';
+import dotenv from 'dotenv';
+
+// Load .env file (project root or cwd) so GROQ_API_KEY env var is available
+dotenv.config();
 
 // ─── Built-in Developer API Key ───
 // Used by default so end-users don't need their own key.
 // When all model rotations are exhausted on this key, the user is prompted for theirs.
-const VINSA_DEV_KEY = Your_GROQ_API_KEY;
+const VINSA_DEV_KEY = '';
 
 const config = new Conf({
   projectName: 'vinsa-cli',
