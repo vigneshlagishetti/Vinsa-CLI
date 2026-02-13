@@ -37,7 +37,7 @@ import {
   getConfirmWrites, setConfirmWrites, getHistory,
   isUsingDevKey,
 } from './config.js';
-import { undoLastChange, getFileChangeStack, setInteractiveConfirm } from './tools.js';
+import { undoLastChange, getFileChangeStack, setInteractiveConfirm, toolDefinitions } from './tools.js';
 import { getPluginTools, getPluginsDir, listPluginFiles, loadPlugins } from './plugins.js';
 import {
   gitStatus, gitLog, gitBranch as gitBranchOp, gitDiff as gitDiffOp, gitAdd,
@@ -116,10 +116,24 @@ function question(rl, prompt) {
   });
 }
 
+/**
+ * Like question(), but pre-fills the input with a default value
+ * so the user can edit it with arrow keys / backspace.
+ */
+function questionPrefilled(rl, prompt, prefill) {
+  return new Promise((resolve) => {
+    rl.question(prompt, (answer) => resolve(answer));
+    rl.write(prefill);
+  });
+}
+
 // ─── Command Extraction & Interactive Execution ───
 // Detects shell commands in LLM responses and renders VS Code-style command cards.
 
 const SHELL_LANGS = /^(?:bash|sh|powershell|ps1|cmd|bat|shell|zsh|terminal|console)$/i;
+
+// Build a Set of known tool names so we can filter them out of command cards
+const TOOL_NAMES = new Set(toolDefinitions.map(t => t.name));
 
 /**
  * Parse a markdown response into command cards.
@@ -136,6 +150,10 @@ function parseCommandResponse(text) {
     const lang = match[1];
     const code = match[2].trim();
     if (!code || !SHELL_LANGS.test(lang)) continue;
+
+    // Skip if the command is actually a Vinsa tool name (not a real shell command)
+    const firstToken = code.split(/\s+/)[0];
+    if (TOOL_NAMES.has(firstToken)) continue;
 
     // Text before this code block → header
     const before = text.slice(lastIndex, match.index).trim();
@@ -167,6 +185,36 @@ function parseCommandResponse(text) {
 }
 
 /**
+ * Detect placeholders like {host_or_ip} or <filename> in a command
+ * and prompt the user to fill each one. Returns the resolved command.
+ */
+async function resolvePlaceholders(rl, command) {
+  // Match {placeholder} and <placeholder> patterns
+  const placeholderRegex = /[{<]([^}>]+)[}>]/g;
+  const matches = [...command.matchAll(placeholderRegex)];
+  if (matches.length === 0) return command;
+
+  let resolved = command;
+  const seen = new Set();
+  for (const m of matches) {
+    const full = m[0];          // e.g. {host_or_ip}
+    const name = m[1].trim();   // e.g. host_or_ip
+    if (seen.has(full)) continue;
+    seen.add(full);
+
+    const label = name.replace(/_/g, ' ');
+    const value = await question(rl, colors.cyan(`  Enter ${label}: `));
+    if (!value.trim()) {
+      printWarning(`Skipped — no value for ${name}`);
+      return null; // abort
+    }
+    // Replace ALL occurrences of this placeholder
+    resolved = resolved.split(full).join(value.trim());
+  }
+  return resolved;
+}
+
+/**
  * Render response with command cards and interactive actions.
  * Returns true if commands were found and rendered, false otherwise.
  */
@@ -183,17 +231,30 @@ async function renderWithCommandCards(rl, response) {
     const choice = answer.trim().toLowerCase();
 
     if (choice === 'r' || choice === 'run' || choice === '') {
-      // Default = Run
-      await executeCommandInteractive(card.command);
+      // Default = Run — resolve placeholders first
+      const resolved = await resolvePlaceholders(rl, card.command);
+      if (resolved) await executeCommandInteractive(resolved);
+    } else if (choice === 'e' || choice === 'edit') {
+      // Edit — let user modify the command before running
+      const edited = await questionPrefilled(rl, colors.cyan('  Edit command › '), card.command);
+      const trimmedEdit = edited.trim();
+      if (trimmedEdit) {
+        const resolved = await resolvePlaceholders(rl, trimmedEdit);
+        if (resolved) await executeCommandInteractive(resolved);
+      } else {
+        printWarning('Empty command — skipped.');
+      }
     } else if (choice === 'i' || choice === 'insert' || choice === 'copy' || choice === 'c') {
-      // Insert = Copy to clipboard
+      // Insert = Copy to clipboard (resolve placeholders first)
+      const resolved = await resolvePlaceholders(rl, card.command);
+      if (!resolved) continue;
       try {
         if (process.platform === 'win32') {
-          execSync('clip', { input: card.command, encoding: 'utf-8' });
+          execSync('clip', { input: resolved, encoding: 'utf-8' });
         } else if (process.platform === 'darwin') {
-          execSync('pbcopy', { input: card.command, encoding: 'utf-8' });
+          execSync('pbcopy', { input: resolved, encoding: 'utf-8' });
         } else {
-          execSync('xclip -selection clipboard', { input: card.command, encoding: 'utf-8' });
+          execSync('xclip -selection clipboard', { input: resolved, encoding: 'utf-8' });
         }
         printSuccess('Copied to clipboard.');
       } catch {

@@ -29,18 +29,25 @@ export const colors = {
 
 // ─── Branding ───
 export function printBanner() {
+  const purple = chalk.hex('#7C3AED');
+  const violet = chalk.hex('#8B5CF6');
+  const indigo = chalk.hex('#6366F1');
+  const cyan   = chalk.hex('#06B6D4');
+  const pink   = chalk.hex('#EC4899');
+  const gold   = chalk.hex('#F59E0B');
+
   console.log('');
-  console.log(colors.brand.bold(`
-  ██╗   ██╗██╗███╗   ██╗███████╗ █████╗ 
-  ██║   ██║██║████╗  ██║██╔════╝██╔══██╗
-  ██║   ██║██║██╔██╗ ██║███████╗███████║
-  ╚██╗ ██╔╝██║██║╚██╗██║╚════██║██╔══██║
-   ╚████╔╝ ██║██║ ╚████║███████║██║  ██║
-    ╚═══╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝
-  `));
-  console.log(colors.accent('  ⚡ AI-Powered Agentic CLI — Free & Open Source'));
+  console.log(purple.bold('  ██╗   ██╗') + violet.bold('██╗') + indigo.bold('███╗   ██╗') + cyan.bold('███████╗') + pink.bold(' █████╗ '));
+  console.log(purple.bold('  ██║   ██║') + violet.bold('██║') + indigo.bold('████╗  ██║') + cyan.bold('██╔════╝') + pink.bold('██╔══██╗'));
+  console.log(purple.bold('  ██║   ██║') + violet.bold('██║') + indigo.bold('██╔██╗ ██║') + cyan.bold('███████╗') + pink.bold('███████║'));
+  console.log(purple.bold('  ╚██╗ ██╔╝') + violet.bold('██║') + indigo.bold('██║╚██╗██║') + cyan.bold('╚════██║') + pink.bold('██╔══██║'));
+  console.log(purple.bold('   ╚████╔╝ ') + violet.bold('██║') + indigo.bold('██║ ╚████║') + cyan.bold('███████║') + pink.bold('██║  ██║'));
+  console.log(purple.bold('    ╚═══╝  ') + violet.bold('╚═╝') + indigo.bold('╚═╝  ╚═══╝') + cyan.bold('╚══════╝') + pink.bold('╚═╝  ╚═╝'));
+  console.log('');
+  console.log(cyan('  ⚡ ') + chalk.white.bold('AI-Powered Agentic CLI') + cyan(' — ') + chalk.white('Free & Open Source'));
   console.log(colors.dim('  Groq · Llama 3.3 70B · MCP · Built-in Tools · Self-Healing Agent'));
-  console.log(colors.dim('  Developed by Lagishetti Vignesh'));
+  console.log('');
+  console.log(colors.dim('  crafted by ') + gold.bold('✦ Lagishetti Vignesh ✦'));
   console.log('');
 }
 
@@ -153,6 +160,7 @@ export function printCommandActions() {
   console.log(
     '  ' +
     chalk.bgGreen.black.bold(' Run ') + '  ' +
+    chalk.bgCyan.black.bold(' Edit ') + '  ' +
     chalk.bgWhite.black.bold(' Insert ') + '  ' +
     chalk.bgWhite.black.bold(' Close ')
   );

@@ -90,6 +90,7 @@ You have **FULL ACCESS** to the user's entire computer. You can read/write any f
 ## Response Format
 - Use markdown for formatting
 - **Commands**: ALWAYS wrap terminal/shell commands in fenced code blocks with the language tag (\`\`\`bash, \`\`\`powershell, \`\`\`cmd). This enables the CLI to offer interactive Run/Copy actions to the user.
+- **NEVER put tool names in code blocks**: Tool names like get_system_info, process_manager, network_diagnostics, read_file, etc. are INTERNAL tools — they are NOT shell commands. Only put REAL shell/terminal commands (e.g., tracert, systeminfo, Get-Process, ls, ping) in fenced code blocks. If you want to use a tool, call it via the tool_use mechanism — do NOT write it as a code block.
 - Use tables for structured data
 - Keep responses focused and actionable`;
 
