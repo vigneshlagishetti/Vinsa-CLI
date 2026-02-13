@@ -269,6 +269,41 @@ export function printAutopilotStatus(status) {
   console.log(`  ${icon} Autopilot ${status}`);
 }
 
+export function printAbout() {
+  const purple = chalk.hex('#7C3AED');
+  const gold   = chalk.hex('#F59E0B');
+  const cyan   = chalk.hex('#06B6D4');
+  const pink   = chalk.hex('#EC4899');
+  const green  = chalk.hex('#10B981');
+  const dim    = chalk.gray;
+  const link   = chalk.hex('#60A5FA').underline;
+  const bar    = purple('  ║ ');
+
+  console.log('');
+  console.log(purple('  ╔═══════════════════════════════════════════════════════╗'));
+  console.log(bar);
+  console.log(bar + gold.bold('  ✦  ') + chalk.white.bold('L A G I S H E T T I') + gold.bold('  ✦'));
+  console.log(bar + '      ' + pink.bold('V I G N E S H'));
+  console.log(bar);
+  console.log(bar + dim('  Creator & Developer of Vinsa CLI'));
+  console.log(bar);
+  console.log(purple('  ╠═══════════════════════════════════════════════════════╣'));
+  console.log(bar);
+  console.log(bar + cyan('  GitHub    ') + link('https://github.com/vigneshlagishetti'));
+  console.log(bar);
+  console.log(bar + cyan('  LinkedIn  ') + link('https://www.linkedin.com/in/vignesh-lagishetti-69a102219/'));
+  console.log(bar);
+  console.log(bar + cyan('  Portfolio ') + link('https://vigneshlagishetti.me'));
+  console.log(bar);
+  console.log(purple('  ╠═══════════════════════════════════════════════════════╣'));
+  console.log(bar);
+  console.log(bar + green('  ⚡ Vinsa CLI v3.0.0') + dim(' — Free & Open Source'));
+  console.log(bar + dim('  11 tools · 24 MCP tools · 49 commands · 9 models'));
+  console.log(bar);
+  console.log(purple('  ╚═══════════════════════════════════════════════════════╝'));
+  console.log('');
+}
+
 export function printSystemInfo(info) {
   console.log('');
   console.log(colors.brand.bold('  System Information'));

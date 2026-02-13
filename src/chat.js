@@ -27,6 +27,7 @@ import {
   printError, printSuccess, printWarning, createSpinner, colors,
   printToolCall, printToolResult, printRetry, printCommandCard, printCommandActions,
   printTimeline, printSnapshotDiff, printAutopilotStep, printAutopilotStatus,
+  printAbout,
 } from './ui.js';
 import {
   showConfig, clearHistory, addToHistory, getApiKey, setApiKey, getModel,
@@ -97,6 +98,7 @@ const SLASH_COMMANDS = {
   '/fetch':    'Git fetch — /fetch [--all] [--prune]',
   '/cherry-pick': 'Cherry-pick commits — /cherry-pick <hash>...',
   '/repoinfo': 'Show comprehensive repo information',
+  '/about':     'About Vinsa & its creator — Lagishetti Vignesh',
   '/quickfix':  'AI auto-fix for the last error',
   '/teach':     'Teach Vinsa custom commands — /teach name = command',
   '/timeline':  'Show session activity timeline',
@@ -1835,6 +1837,11 @@ async function handleSlashCommand(cmd, agent, mcpManager, rl) {
         });
       }
       printDivider();
+      break;
+    }
+
+    case '/about': {
+      printAbout();
       break;
     }
 
