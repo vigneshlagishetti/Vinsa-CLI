@@ -1,0 +1,124 @@
+/**
+ * Vinsa CLI — Theme & UI Layer
+ * Beautiful terminal output with colors, markdown, and formatting.
+ */
+import chalk from 'chalk';
+import ora from 'ora';
+import { marked } from 'marked';
+import { markedTerminal } from 'marked-terminal';
+
+// Configure marked for terminal rendering
+marked.use(markedTerminal({
+  reflowText: true,
+  width: 80,
+  showSectionPrefix: false,
+}));
+
+// ─── Color Palette ───
+export const colors = {
+  brand:    chalk.hex('#7C3AED'),     // Vinsa purple
+  accent:   chalk.hex('#06B6D4'),     // Cyan accent
+  success:  chalk.hex('#10B981'),     // Green
+  warning:  chalk.hex('#F59E0B'),     // Amber
+  error:    chalk.hex('#EF4444'),     // Red
+  dim:      chalk.gray,
+  bold:     chalk.bold,
+  code:     chalk.hex('#A78BFA'),     // Light purple for code
+  tool:     chalk.hex('#FB923C'),     // Orange for tool calls
+};
+
+// ─── Branding ───
+export function printBanner() {
+  console.log('');
+  console.log(colors.brand.bold(`
+  ██╗   ██╗██╗███╗   ██╗███████╗ █████╗ 
+  ██║   ██║██║████╗  ██║██╔════╝██╔══██╗
+  ██║   ██║██║██╔██╗ ██║███████╗███████║
+  ╚██╗ ██╔╝██║██║╚██╗██║╚════██║██╔══██║
+   ╚████╔╝ ██║██║ ╚████║███████║██║  ██║
+    ╚═══╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝
+  `));
+  console.log(colors.accent('  ⚡ AI-Powered Agentic CLI — Free & Open Source'));
+  console.log(colors.dim('  Groq · Llama 3.3 70B · MCP · Built-in Tools · Self-Healing Agent'));
+  console.log(colors.dim('  Developed by Lagishetti Vignesh'));
+  console.log('');
+}
+
+export function printDivider() {
+  console.log(colors.dim('─'.repeat(60)));
+}
+
+// ─── Spinners ───
+export function createSpinner(text = 'Thinking...') {
+  return ora({
+    text: colors.accent(text),
+    spinner: 'dots12',
+    color: 'cyan',
+  });
+}
+
+// ─── Output Formatting ───
+export function renderMarkdown(text) {
+  try {
+    return marked(text);
+  } catch {
+    return text;
+  }
+}
+
+export function printResponse(text) {
+  console.log('');
+  console.log(colors.brand.bold('  Vinsa ›'));
+  console.log(renderMarkdown(text));
+}
+
+export function printToolCall(toolName, args) {
+  const argsStr = typeof args === 'string' ? args : JSON.stringify(args, null, 0);
+  const truncated = argsStr.length > 120 ? argsStr.slice(0, 120) + '...' : argsStr;
+  console.log(colors.tool(`  🔧 Using tool: ${toolName}`) + colors.dim(` (${truncated})`));
+}
+
+export function printToolResult(result) {
+  const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+  const lines = text.split('\n');
+  const preview = lines.slice(0, 8).join('\n');
+  if (lines.length > 8) {
+    console.log(colors.dim(`  ┃ ${preview}\n  ┃ ... (${lines.length - 8} more lines)`));
+  } else {
+    console.log(colors.dim(`  ┃ ${preview}`));
+  }
+}
+
+export function printError(message) {
+  console.log(colors.error(`  ✖ Error: ${message}`));
+}
+
+export function printWarning(message) {
+  console.log(colors.warning(`  ⚠ ${message}`));
+}
+
+export function printSuccess(message) {
+  console.log(colors.success(`  ✔ ${message}`));
+}
+
+export function printInfo(message) {
+  console.log(colors.accent(`  ℹ ${message}`));
+}
+
+export function printRetry(attempt, maxRetries, reason) {
+  console.log(colors.warning(`  ↻ Retry ${attempt}/${maxRetries}: ${reason}`));
+}
+
+export function printPrompt() {
+  return colors.brand.bold('  You › ');
+}
+
+export function printSystemInfo(info) {
+  console.log('');
+  console.log(colors.brand.bold('  System Information'));
+  printDivider();
+  for (const [key, value] of Object.entries(info)) {
+    console.log(`  ${colors.accent(key)}: ${value}`);
+  }
+  printDivider();
+}
