@@ -104,7 +104,7 @@ const SLASH_COMMANDS = {
   '/timeline':  'Show session activity timeline',
   '/snapshot':  'System state capture — /snapshot [name] | /snapshot diff <a> <b>',
   '/autopilot': 'Goal-driven AI loop — /autopilot <goal>',
-  '/explain':   'Run & explain — /explain <command>',
+  '/explain':   'Explain a command or topic — /explain <command|topic>',
   '/exit':     'Exit Vinsa shell',
   '/quit':     'Exit Vinsa shell',
 };
@@ -2431,48 +2431,71 @@ Keep it to 10 steps maximum. Be specific and practical for ${process.platform ==
       break;
     }
 
-    // ─── /explain ─── Run command & get plain-English explanation ───
+    // ─── /explain ─── Run & explain command, or explain a topic ───
     case '/explain': {
       if (!arg) {
-        printWarning('Usage: /explain <command>');
+        printWarning('Usage: /explain <command or topic>');
         console.log(colors.dim('  Example: /explain netstat -tlnp'));
         console.log(colors.dim('  Example: /explain git log --oneline -10'));
+        console.log(colors.dim('  Example: /explain about system design'));
         break;
       }
 
       console.log('');
       console.log(colors.brand.bold('  🔍 Explain'));
       printDivider();
-      console.log(colors.dim(`  Running: ${arg}`));
 
-      let cmdOutput = '';
-      let cmdError = '';
+      // Detect whether the argument looks like a shell command or a topic/concept.
+      // We check if the first word is an executable/command reachable from the shell.
+      const firstWord = arg.trim().split(/\s+/)[0];
+      let isShellCommand = false;
       try {
-        const shell = process.platform === 'win32' ? 'powershell.exe' : '/bin/bash';
-        cmdOutput = execSync(arg, {
+        const whichCmd = process.platform === 'win32'
+          ? `Get-Command "${firstWord}" -ErrorAction Stop`
+          : `command -v "${firstWord}"`;
+        execSync(whichCmd, {
           encoding: 'utf-8',
-          timeout: 30000,
-          cwd: process.cwd(),
-          shell,
-          maxBuffer: 1024 * 1024 * 5,
+          timeout: 5000,
+          shell: process.platform === 'win32' ? 'powershell.exe' : '/bin/bash',
           stdio: ['pipe', 'pipe', 'pipe'],
-        }).trim();
-      } catch (e) {
-        cmdOutput = e.stdout ? e.stdout.trim() : '';
-        cmdError = e.stderr ? e.stderr.trim() : e.message;
+        });
+        isShellCommand = true;
+      } catch {
+        isShellCommand = false;
       }
 
-      if (cmdOutput) {
-        const preview = cmdOutput.split('\n').slice(0, 10).join('\n');
-        console.log(colors.dim(preview));
-        if (cmdOutput.split('\n').length > 10) console.log(colors.dim(`  ... (${cmdOutput.split('\n').length} lines total)`));
-      }
-      if (cmdError) {
-        console.log(colors.error(cmdError.split('\n').slice(0, 5).join('\n')));
-      }
-      printDivider();
+      if (isShellCommand) {
+        // ── Shell command path: run it and explain output ──
+        console.log(colors.dim(`  Running: ${arg}`));
 
-      const explainPrompt = `Explain this command and its output in plain English. Be concise and helpful.
+        let cmdOutput = '';
+        let cmdError = '';
+        try {
+          const shell = process.platform === 'win32' ? 'powershell.exe' : '/bin/bash';
+          cmdOutput = execSync(arg, {
+            encoding: 'utf-8',
+            timeout: 30000,
+            cwd: process.cwd(),
+            shell,
+            maxBuffer: 1024 * 1024 * 5,
+            stdio: ['pipe', 'pipe', 'pipe'],
+          }).trim();
+        } catch (e) {
+          cmdOutput = e.stdout ? e.stdout.trim() : '';
+          cmdError = e.stderr ? e.stderr.trim() : e.message;
+        }
+
+        if (cmdOutput) {
+          const preview = cmdOutput.split('\n').slice(0, 10).join('\n');
+          console.log(colors.dim(preview));
+          if (cmdOutput.split('\n').length > 10) console.log(colors.dim(`  ... (${cmdOutput.split('\n').length} lines total)`));
+        }
+        if (cmdError) {
+          console.log(colors.error(cmdError.split('\n').slice(0, 5).join('\n')));
+        }
+        printDivider();
+
+        const explainPrompt = `Explain this command and its output in plain English. Be concise and helpful.
 
 Command: ${arg}
 Output:
@@ -2484,17 +2507,37 @@ Explain:
 2. Key findings from the output
 3. Any issues or warnings spotted`;
 
-      const spinner = createSpinner('Analyzing...');
-      spinner.start();
-      try {
-        const explanation = await agent.run(explainPrompt);
-        spinner.stop();
-        console.log('');
-        await renderWithCommandCards(rl, explanation);
-        trackEvent('explain', `Explained: ${arg.slice(0, 50)}`);
-      } catch (e) {
-        spinner.stop();
-        printError('Could not explain: ' + e.message);
+        const spinner = createSpinner('Analyzing...');
+        spinner.start();
+        try {
+          const explanation = await agent.run(explainPrompt);
+          spinner.stop();
+          console.log('');
+          await renderWithCommandCards(rl, explanation);
+          trackEvent('explain', `Explained command: ${arg.slice(0, 50)}`);
+        } catch (e) {
+          spinner.stop();
+          printError('Could not explain: ' + e.message);
+        }
+      } else {
+        // ── Topic/concept path: ask AI to explain the topic directly ──
+        console.log(colors.dim(`  Topic: ${arg}`));
+        printDivider();
+
+        const topicPrompt = `Explain the following topic in plain English. Be thorough yet concise. Use examples where helpful.\n\nTopic: ${arg}`;
+
+        const spinner = createSpinner('Thinking...');
+        spinner.start();
+        try {
+          const explanation = await agent.run(topicPrompt);
+          spinner.stop();
+          console.log('');
+          await renderWithCommandCards(rl, explanation);
+          trackEvent('explain', `Explained topic: ${arg.slice(0, 50)}`);
+        } catch (e) {
+          spinner.stop();
+          printError('Could not explain: ' + e.message);
+        }
       }
       break;
     }
