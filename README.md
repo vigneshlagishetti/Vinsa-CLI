@@ -16,24 +16,24 @@
 
 ## Why Vinsa?
 
-| Feature | Vinsa CLI | Claude Code | GitHub Copilot CLI | Aider |
-|---|:---:|:---:|:---:|:---:|
-| **Price** | **Free forever** | $20/mo+ | $10/mo+ | API costs |
-| **Built-in Tools** | **11** | 5 | 0 | 2 |
-| **MCP Support** | **24 tools, 10 presets** | Limited | No | No |
-| **Slash Commands** | **48** | ~15 | ~5 | ~10 |
-| **Auto-Model Rotation** | **9 models, 3 tiers** | 1 model | 1 model | Manual |
-| **Multi-Agent Mode** | **Yes** | No | No | No |
-| **Git Integration** | **23 operations** | Basic | Basic | Good |
-| **Interactive Command Cards** | **Yes** | No | No | No |
-| **Custom Teach Commands** | **Yes** | No | No | No |
-| **Session Timeline** | **Yes** | No | No | No |
-| **System Snapshots + Diff** | **Yes** | No | No | No |
-| **Autopilot Mode** | **Yes** | No | No | No |
-| **Voice Input (Whisper)** | **Yes** | No | No | No |
-| **Plugin System** | **Yes** | No | No | Yes |
-| **HTTP API Server** | **Yes** | No | No | No |
-| **Install Size** | **~30 MB** | ~800 MB | ~200 MB | ~150 MB |
+| Feature                       |        Vinsa CLI         | Claude Code | GitHub Copilot CLI |   Aider   |
+| ----------------------------- | :----------------------: | :---------: | :----------------: | :-------: |
+| **Price**                     |     **Free forever**     |   $20/mo+   |      $10/mo+       | API costs |
+| **Built-in Tools**            |          **11**          |      5      |         0          |     2     |
+| **MCP Support**               | **24 tools, 10 presets** |   Limited   |         No         |    No     |
+| **Slash Commands**            |          **48**          |     ~15     |         ~5         |    ~10    |
+| **Auto-Model Rotation**       |  **9 models, 3 tiers**   |   1 model   |      1 model       |  Manual   |
+| **Multi-Agent Mode**          |         **Yes**          |     No      |         No         |    No     |
+| **Git Integration**           |    **23 operations**     |    Basic    |       Basic        |   Good    |
+| **Interactive Command Cards** |         **Yes**          |     No      |         No         |    No     |
+| **Custom Teach Commands**     |         **Yes**          |     No      |         No         |    No     |
+| **Session Timeline**          |         **Yes**          |     No      |         No         |    No     |
+| **System Snapshots + Diff**   |         **Yes**          |     No      |         No         |    No     |
+| **Autopilot Mode**            |         **Yes**          |     No      |         No         |    No     |
+| **Voice Input (Whisper)**     |         **Yes**          |     No      |         No         |    No     |
+| **Plugin System**             |         **Yes**          |     No      |         No         |    Yes    |
+| **HTTP API Server**           |         **Yes**          |     No      |         No         |    No     |
+| **Install Size**              |        **~30 MB**        |   ~800 MB   |      ~200 MB       |  ~150 MB  |
 
 ---
 
@@ -126,28 +126,28 @@ vinsa review ./src/app.js
 
 Vinsa provides **20 CLI commands** via Commander.js:
 
-| Command | Description |
-|---|---|
-| `vinsa` | Launch interactive AI shell (default) |
-| `vinsa chat` | Start interactive chat (`--continue` to resume last session) |
-| `vinsa ask <prompt>` | One-shot question (non-interactive) |
-| `vinsa run <command>` | Ask AI to run & explain a system command |
-| `vinsa debug` | AI diagnoses system/network issues |
-| `vinsa scan <path>` | AI analyzes a codebase |
-| `vinsa config set-key <key>` | Set Groq API key |
-| `vinsa config set-model <model>` | Set preferred model |
-| `vinsa config show` | Show current configuration |
-| `vinsa config reset` | Reset all configuration |
-| `vinsa config path` | Show config file path |
-| `vinsa mcp add <name> <cmd> [args...]` | Add an MCP server |
-| `vinsa mcp remove <name>` | Remove an MCP server |
-| `vinsa mcp list` | List MCP servers |
-| `vinsa tools` | List all available tools |
-| `vinsa review <file>` | AI-powered code review |
-| `vinsa init [dir]` | Initialize a project with AI guidance |
-| `vinsa watch <dir>` | Watch a directory for changes |
-| `vinsa serve` | Start HTTP API server |
-| `vinsa git <command>` | Git operations via the CLI |
+| Command                                | Description                                                  |
+| -------------------------------------- | ------------------------------------------------------------ |
+| `vinsa`                                | Launch interactive AI shell (default)                        |
+| `vinsa chat`                           | Start interactive chat (`--continue` to resume last session) |
+| `vinsa ask <prompt>`                   | One-shot question (non-interactive)                          |
+| `vinsa run <command>`                  | Ask AI to run & explain a system command                     |
+| `vinsa debug`                          | AI diagnoses system/network issues                           |
+| `vinsa scan <path>`                    | AI analyzes a codebase                                       |
+| `vinsa config set-key <key>`           | Set Groq API key                                             |
+| `vinsa config set-model <model>`       | Set preferred model                                          |
+| `vinsa config show`                    | Show current configuration                                   |
+| `vinsa config reset`                   | Reset all configuration                                      |
+| `vinsa config path`                    | Show config file path                                        |
+| `vinsa mcp add <name> <cmd> [args...]` | Add an MCP server                                            |
+| `vinsa mcp remove <name>`              | Remove an MCP server                                         |
+| `vinsa mcp list`                       | List MCP servers                                             |
+| `vinsa tools`                          | List all available tools                                     |
+| `vinsa review <file>`                  | AI-powered code review                                       |
+| `vinsa init [dir]`                     | Initialize a project with AI guidance                        |
+| `vinsa watch <dir>`                    | Watch a directory for changes                                |
+| `vinsa serve`                          | Start HTTP API server                                        |
+| `vinsa git <command>`                  | Git operations via the CLI                                   |
 
 ---
 
@@ -178,78 +178,78 @@ All **49 slash commands** organized by category:
 
 ### Core
 
-| Command | Description |
-|---|---|
-| `/help` | Show all available commands |
-| `/clear` | Clear conversation history |
-| `/tools` | List all available tools |
-| `/models` | Show model rotation status & available models |
-| `/mcp` | Show MCP server status |
-| `/system` | Show system information |
-| `/config` | Show current configuration |
-| `/history` | Show conversation history summary |
-| `/stats` | Show token usage & session statistics |
-| `/compact` | Compress conversation to save context |
-| `/doctor` | Run self-diagnostic checks |
-| `/exit` / `/quit` | Exit Vinsa shell |
+| Command           | Description                                   |
+| ----------------- | --------------------------------------------- |
+| `/help`           | Show all available commands                   |
+| `/clear`          | Clear conversation history                    |
+| `/tools`          | List all available tools                      |
+| `/models`         | Show model rotation status & available models |
+| `/mcp`            | Show MCP server status                        |
+| `/system`         | Show system information                       |
+| `/config`         | Show current configuration                    |
+| `/history`        | Show conversation history summary             |
+| `/stats`          | Show token usage & session statistics         |
+| `/compact`        | Compress conversation to save context         |
+| `/doctor`         | Run self-diagnostic checks                    |
+| `/exit` / `/quit` | Exit Vinsa shell                              |
 
 ### Session Management
 
-| Command | Description |
-|---|---|
-| `/save [name]` | Save current session |
-| `/load <name>` | Load a saved session |
-| `/list` | List all saved sessions |
-| `/copy` | Copy last response to clipboard |
-| `/export [md\|html\|json]` | Export conversation to file |
-| `/branch [name]` | Fork conversation into a branch |
-| `/switch <name>` | Switch to a different branch |
+| Command                    | Description                     |
+| -------------------------- | ------------------------------- |
+| `/save [name]`             | Save current session            |
+| `/load <name>`             | Load a saved session            |
+| `/list`                    | List all saved sessions         |
+| `/copy`                    | Copy last response to clipboard |
+| `/export [md\|html\|json]` | Export conversation to file     |
+| `/branch [name]`           | Fork conversation into a branch |
+| `/switch <name>`           | Switch to a different branch    |
 
 ### Productivity
 
-| Command | Description |
-|---|---|
-| `/plan` | Toggle plan mode (think before acting) |
-| `/alias name = prompt` | Create/list/remove prompt aliases |
-| `/recall <keyword>` | Search conversation history |
-| `/voice` | Voice input via Groq Whisper (microphone) |
-| `/hooks [list\|add\|remove\|clear]` | Manage tool execution hooks |
-| `/confirm` | Toggle interactive diff preview for writes |
-| `/plugins` | List loaded plugins |
-| `/multi <task>` | Multi-agent mode for complex tasks |
-| `/undo` | Undo the last file change made by Vinsa |
+| Command                             | Description                                |
+| ----------------------------------- | ------------------------------------------ |
+| `/plan`                             | Toggle plan mode (think before acting)     |
+| `/alias name = prompt`              | Create/list/remove prompt aliases          |
+| `/recall <keyword>`                 | Search conversation history                |
+| `/voice`                            | Voice input via Groq Whisper (microphone)  |
+| `/hooks [list\|add\|remove\|clear]` | Manage tool execution hooks                |
+| `/confirm`                          | Toggle interactive diff preview for writes |
+| `/plugins`                          | List loaded plugins                        |
+| `/multi <task>`                     | Multi-agent mode for complex tasks         |
+| `/undo`                             | Undo the last file change made by Vinsa    |
 
 ### Git
 
-| Command | Description |
-|---|---|
-| `/git <command>` | Full git source control |
-| `/commit` | AI-powered commit message + commit |
-| `/diff` | Show git diff (staged or unstaged) |
-| `/status` | Git status (shortcut) |
-| `/log [count] [--graph] [--all]` | Git log |
-| `/stash [save\|list\|pop\|apply\|drop\|clear]` | Git stash |
-| `/push [remote] [branch]` | Git push |
-| `/pull [--rebase]` | Git pull |
-| `/merge <branch> [--squash] [--no-ff]` | Git merge |
-| `/tag [create\|delete] [name]` | Git tag |
-| `/remote [add\|remove] [name] [url]` | Git remote |
-| `/blame <file> [startLine] [endLine]` | Git blame |
-| `/fetch [--all] [--prune]` | Git fetch |
-| `/cherry-pick <hash>...` | Cherry-pick commits |
-| `/repoinfo` | Show comprehensive repo information |
+| Command                                        | Description                         |
+| ---------------------------------------------- | ----------------------------------- |
+| `/git <command>`                               | Full git source control             |
+| `/commit`                                      | AI-powered commit message + commit  |
+| `/diff`                                        | Show git diff (staged or unstaged)  |
+| `/status`                                      | Git status (shortcut)               |
+| `/log [count] [--graph] [--all]`               | Git log                             |
+| `/stash [save\|list\|pop\|apply\|drop\|clear]` | Git stash                           |
+| `/push [remote] [branch]`                      | Git push                            |
+| `/pull [--rebase]`                             | Git pull                            |
+| `/merge <branch> [--squash] [--no-ff]`         | Git merge                           |
+| `/tag [create\|delete] [name]`                 | Git tag                             |
+| `/remote [add\|remove] [name] [url]`           | Git remote                          |
+| `/blame <file> [startLine] [endLine]`          | Git blame                           |
+| `/fetch [--all] [--prune]`                     | Git fetch                           |
+| `/cherry-pick <hash>...`                       | Cherry-pick commits                 |
+| `/repoinfo`                                    | Show comprehensive repo information |
 
 ### Unique Features
 
-| Command | Description |
-|---|---|
-| `/quickfix` | AI auto-fixes the last error that occurred |
-| `/teach name = command` | Teach Vinsa reusable custom commands |
-| `/timeline` | Show session activity timeline with timestamps |
-| `/snapshot [name]` | Capture system state; diff two snapshots |
-| `/autopilot <goal>` | Goal-driven autonomous AI loop |
-| `/explain <command>` | Run a command and get AI explanation |
-| `/about` | About Vinsa & its creator — Lagishetti Vignesh |
+| Command                 | Description                                    |
+| ----------------------- | ---------------------------------------------- |
+| `/quickfix`             | AI auto-fixes the last error that occurred     |
+| `/teach name = command` | Teach Vinsa reusable custom commands           |
+| `/timeline`             | Show session activity timeline with timestamps |
+| `/snapshot [name]`      | Capture system state; diff two snapshots       |
+| `/autopilot <goal>`     | Goal-driven autonomous AI loop                 |
+| `/explain <command>`    | Run a command and get AI explanation           |
+| `/about`                | About Vinsa & its creator — Lagishetti Vignesh |
 
 ---
 
@@ -314,12 +314,14 @@ Set a goal and let the AI work autonomously in a loop:
 ```
 
 Vinsa will:
+
 1. Break the goal into steps
 2. Execute tools autonomously (create files, run commands, install packages)
 3. Show progress with step counters and status indicators
 4. Continue until the goal is complete or it needs your input
 
 Each step displays:
+
 ```
 ─── ⏵ STEP 1/5 ──────────────
 🔄 Working...
@@ -362,6 +364,7 @@ Track every action in your session with timestamps and elapsed time:
 ```
 
 Output:
+
 ```
 ─── 📅 SESSION TIMELINE ───
   💬 10:32:05 (+0s)    Query: "create a REST API"
@@ -402,19 +405,19 @@ Snapshots capture: running processes, open ports, disk usage, memory usage, and 
 
 Vinsa has **11 built-in tools** the AI can use autonomously:
 
-| Tool | Description |
-|---|---|
-| `run_shell_command` | Execute any shell command with timeout and safety checks |
-| `read_file` | Read file contents (supports line ranges) |
-| `write_file` | Write or overwrite files (with undo support) |
-| `list_directory` | List directory contents (with depth limiting) |
-| `search_files` | Regex search across files (like grep) |
-| `get_system_info` | CPU, memory, disk, OS, network info |
-| `network_diagnostics` | Ping, DNS, HTTP checks, port scanning |
-| `web_fetch` | Fetch URL content (HTML → text, JSON, headers) |
-| `process_manager` | List, kill, find processes |
-| `code_analysis` | Analyze code structure (functions, classes, imports) |
-| `git_operations` | 23 git operations (status, log, branch, diff, etc.) |
+| Tool                  | Description                                              |
+| --------------------- | -------------------------------------------------------- |
+| `run_shell_command`   | Execute any shell command with timeout and safety checks |
+| `read_file`           | Read file contents (supports line ranges)                |
+| `write_file`          | Write or overwrite files (with undo support)             |
+| `list_directory`      | List directory contents (with depth limiting)            |
+| `search_files`        | Regex search across files (like grep)                    |
+| `get_system_info`     | CPU, memory, disk, OS, network info                      |
+| `network_diagnostics` | Ping, DNS, HTTP checks, port scanning                    |
+| `web_fetch`           | Fetch URL content (HTML → text, JSON, headers)           |
+| `process_manager`     | List, kill, find processes                               |
+| `code_analysis`       | Analyze code structure (functions, classes, imports)     |
+| `git_operations`      | 23 git operations (status, log, branch, diff, etc.)      |
 
 ---
 
@@ -424,11 +427,11 @@ The **Model Context Protocol** lets Vinsa connect to external tool servers.
 
 ### Auto-installed Servers (24 tools, zero config)
 
-| Server | Tools | What It Does |
-|---|---|---|
-| `filesystem` | 14 | Read, write, search, move files and directories |
-| `memory` | 9 | Persistent knowledge graph for entities & relations |
-| `sequential-thinking` | 1 | Step-by-step reasoning for complex problems |
+| Server                | Tools | What It Does                                        |
+| --------------------- | ----- | --------------------------------------------------- |
+| `filesystem`          | 14    | Read, write, search, move files and directories     |
+| `memory`              | 9     | Persistent knowledge graph for entities & relations |
+| `sequential-thinking` | 1     | Step-by-step reasoning for complex problems         |
 
 These install automatically on first launch via `npx`.
 
@@ -477,27 +480,27 @@ Vinsa auto-rotates through **9 models across 3 tiers** for fault tolerance. If o
 
 ### Tier 1 — Flagship
 
-| Model | Parameters | Strengths |
-|---|---|---|
-| `llama-3.3-70b-versatile` | 70B | Best overall — reasoning, code, analysis |
-| `llama-4-maverick-17b-128e-instruct` | 17B (128 experts) | Mixture-of-experts, creative & broad |
-| `qwq-32b` | 32B | Strong reasoning and math |
-| `mistral-saba-24b` | 24B | Fast, multilingual, good at code |
+| Model                                | Parameters        | Strengths                                |
+| ------------------------------------ | ----------------- | ---------------------------------------- |
+| `llama-3.3-70b-versatile`            | 70B               | Best overall — reasoning, code, analysis |
+| `llama-4-maverick-17b-128e-instruct` | 17B (128 experts) | Mixture-of-experts, creative & broad     |
+| `qwq-32b`                            | 32B               | Strong reasoning and math                |
+| `mistral-saba-24b`                   | 24B               | Fast, multilingual, good at code         |
 
 ### Tier 2 — Fast
 
-| Model | Parameters | Strengths |
-|---|---|---|
-| `mixtral-8x7b-32768` | 8×7B | MoE, 32K context, balanced |
+| Model                            | Parameters       | Strengths                         |
+| -------------------------------- | ---------------- | --------------------------------- |
+| `mixtral-8x7b-32768`             | 8×7B             | MoE, 32K context, balanced        |
 | `llama-4-scout-17b-16e-instruct` | 17B (16 experts) | Efficient MoE, good general usage |
 
 ### Tier 3 — Ultralight
 
-| Model | Parameters | Strengths |
-|---|---|---|
-| `gemma2-9b-it` | 9B | Efficient, good for focused tasks |
-| `llama-3.1-8b-instant` | 8B | Ultra-fast responses |
-| `llama-3.2-3b-preview` | 3B | Smallest, fastest, edge tasks |
+| Model                  | Parameters | Strengths                         |
+| ---------------------- | ---------- | --------------------------------- |
+| `gemma2-9b-it`         | 9B         | Efficient, good for focused tasks |
+| `llama-3.1-8b-instant` | 8B         | Ultra-fast responses              |
+| `llama-3.2-3b-preview` | 3B         | Smallest, fastest, edge tasks     |
 
 ```bash
 # Check current model in shell
@@ -513,31 +516,31 @@ vinsa config set-model qwq-32b
 
 **23 git operations** built into both the AI tools and slash commands:
 
-| Operation | Slash Command | Description |
-|---|---|---|
-| Status | `/status` | Working tree status |
-| Log | `/log` | Commit history with graph/filter options |
-| Branch | `/git branch` | Create, delete, rename, list branches |
-| Diff | `/diff` | Staged/unstaged diffs, file diffs, commit diffs |
-| Add | `/git add` | Stage files |
-| Commit | `/commit` | AI-generated commit message + commit |
-| Push | `/push` | Push to remote |
-| Pull | `/pull` | Pull with optional rebase |
-| Merge | `/merge` | Merge with squash/no-ff options |
-| Stash | `/stash` | Save, list, pop, apply, drop, clear |
-| Clone | `/git clone` | Clone repositories |
-| Init | `/git init` | Initialize new repos |
-| Remote | `/remote` | Add, remove, list remotes |
-| Tag | `/tag` | Create, delete, list tags |
-| Blame | `/blame` | Line-by-line blame with range support |
-| Cherry-pick | `/cherry-pick` | Cherry-pick commits |
-| Rebase | `/git rebase` | Interactive/onto rebase |
-| Reset | `/git reset` | Soft/mixed/hard reset |
-| Checkout | `/git checkout` | Checkout branches or files |
-| Show | `/git show` | Show commit details |
-| Fetch | `/fetch` | Fetch from remotes |
-| Conflicts | `/git conflicts` | List, resolve merge conflicts |
-| Repo Info | `/repoinfo` | Full repo stats and info |
+| Operation   | Slash Command    | Description                                     |
+| ----------- | ---------------- | ----------------------------------------------- |
+| Status      | `/status`        | Working tree status                             |
+| Log         | `/log`           | Commit history with graph/filter options        |
+| Branch      | `/git branch`    | Create, delete, rename, list branches           |
+| Diff        | `/diff`          | Staged/unstaged diffs, file diffs, commit diffs |
+| Add         | `/git add`       | Stage files                                     |
+| Commit      | `/commit`        | AI-generated commit message + commit            |
+| Push        | `/push`          | Push to remote                                  |
+| Pull        | `/pull`          | Pull with optional rebase                       |
+| Merge       | `/merge`         | Merge with squash/no-ff options                 |
+| Stash       | `/stash`         | Save, list, pop, apply, drop, clear             |
+| Clone       | `/git clone`     | Clone repositories                              |
+| Init        | `/git init`      | Initialize new repos                            |
+| Remote      | `/remote`        | Add, remove, list remotes                       |
+| Tag         | `/tag`           | Create, delete, list tags                       |
+| Blame       | `/blame`         | Line-by-line blame with range support           |
+| Cherry-pick | `/cherry-pick`   | Cherry-pick commits                             |
+| Rebase      | `/git rebase`    | Interactive/onto rebase                         |
+| Reset       | `/git reset`     | Soft/mixed/hard reset                           |
+| Checkout    | `/git checkout`  | Checkout branches or files                      |
+| Show        | `/git show`      | Show commit details                             |
+| Fetch       | `/fetch`         | Fetch from remotes                              |
+| Conflicts   | `/git conflicts` | List, resolve merge conflicts                   |
+| Repo Info   | `/repoinfo`      | Full repo stats and info                        |
 
 ---
 
@@ -566,17 +569,17 @@ Extend Vinsa with custom plugins:
 ```javascript
 // Example plugin
 export default {
-  name: 'my-plugin',
-  version: '1.0.0',
+  name: "my-plugin",
+  version: "1.0.0",
   tools: [
     {
-      name: 'my_tool',
-      description: 'Does something cool',
-      parameters: { type: 'object', properties: {} },
-      execute: async (args) => ({ result: 'done' }),
-    }
+      name: "my_tool",
+      description: "Does something cool",
+      parameters: { type: "object", properties: {} },
+      execute: async (args) => ({ result: "done" }),
+    },
   ],
-  init: () => console.log('Plugin loaded!'),
+  init: () => console.log("Plugin loaded!"),
 };
 ```
 
@@ -642,20 +645,20 @@ User Input → REPL Loop → Teach Resolution → Agent (Groq API)
 
 ## Dependencies
 
-| Package | Purpose |
-|---|---|
-| `groq-sdk` | Groq API client (free AI inference) |
-| `@modelcontextprotocol/sdk` | MCP server connections |
-| `commander` | CLI command parsing |
-| `chalk` | Terminal colors and styling |
-| `ora` | Spinners and loading indicators |
-| `marked` + `marked-terminal` | Markdown rendering in terminal |
-| `conf` | Persistent configuration storage |
-| `dotenv` | Environment variable loading |
-| `dns2` | DNS diagnostics |
-| `systeminformation` | System info collection |
-| `cli-markdown` | Additional markdown support |
-| `readline` | Interactive input handling |
+| Package                      | Purpose                             |
+| ---------------------------- | ----------------------------------- |
+| `groq-sdk`                   | Groq API client (free AI inference) |
+| `@modelcontextprotocol/sdk`  | MCP server connections              |
+| `commander`                  | CLI command parsing                 |
+| `chalk`                      | Terminal colors and styling         |
+| `ora`                        | Spinners and loading indicators     |
+| `marked` + `marked-terminal` | Markdown rendering in terminal      |
+| `conf`                       | Persistent configuration storage    |
+| `dotenv`                     | Environment variable loading        |
+| `dns2`                       | DNS diagnostics                     |
+| `systeminformation`          | System info collection              |
+| `cli-markdown`               | Additional markdown support         |
+| `readline`                   | Interactive input handling          |
 
 ---
 
