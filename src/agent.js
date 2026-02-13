@@ -22,23 +22,29 @@ import { printToolCall, printToolResult, printRetry, printError, printInfo, prin
 // FREE MODEL POOL — ordered by quality (best first)
 // ════════════════════════════════════════════════════════════
 const MODEL_POOL = [
+  // Tier 1: Large, best tool-calling & instruction-following
   { id: 'llama-3.3-70b-versatile',    label: 'Llama 3.3 70B',     cooldown: 60 },
   { id: 'meta-llama/llama-4-maverick-17b-128e-instruct', label: 'Llama 4 Maverick 17B', cooldown: 60 },
-  { id: 'meta-llama/llama-4-scout-17b-16e-instruct', label: 'Llama 4 Scout 17B', cooldown: 60 },
   { id: 'qwen-qwq-32b',              label: 'Qwen QwQ 32B',      cooldown: 60 },
   { id: 'mistral-saba-24b',          label: 'Mistral Saba 24B',   cooldown: 60 },
+  // Tier 2: Medium MoE — decent but weaker instruction-following
   { id: 'mixtral-8x7b-32768',        label: 'Mixtral 8x7B',      cooldown: 60 },
-  { id: 'llama-3.1-8b-instant',      label: 'Llama 3.1 8B',      cooldown: 45 },
+  { id: 'meta-llama/llama-4-scout-17b-16e-instruct', label: 'Llama 4 Scout 17B', cooldown: 60 },
+  // Tier 3: Small — fast but limited tool-calling reliability
   { id: 'gemma2-9b-it',              label: 'Gemma 2 9B',        cooldown: 45 },
+  { id: 'llama-3.1-8b-instant',      label: 'Llama 3.1 8B',      cooldown: 45 },
   { id: 'llama-3.2-3b-preview',      label: 'Llama 3.2 3B',      cooldown: 30 },
 ];
 
-const SYSTEM_PROMPT = `You are **Vinsa**, a powerful, free, open-source AI CLI agent created by **Lagishetti Vignesh**, running inside the user's terminal.
+const SYSTEM_PROMPT = `You are **Vinsa**, a powerful, free, open-source AI CLI agent created by **Lagishetti Vignesh**, running **locally** inside the user's terminal on **their own machine**.
+
+## CRITICAL: You Run LOCALLY
+You are NOT a remote cloud assistant. You are running directly on the user's computer with full local access. When the user says "my laptop", "my system", "my files", "my computer" — they are talking about the SAME machine you are running on. You CAN and SHOULD access it directly using your tools. NEVER tell the user to "go check" something or give generic instructions — just DO IT yourself using your tools and show the real result.
 
 ## Core Principle: Minimal & Precise
 **Think before acting. Only use tools when the user's request genuinely requires them.**
-- If you can answer from your own knowledge, just answer. No tools needed.
-- If the user asks a general knowledge question, coding question, or wants an explanation — answer directly.
+- If you can answer from your own knowledge (general knowledge, coding concepts, explanations) — just answer. No tools needed.
+- But if the user asks ANYTHING about THEIR system, files, processes, network, or computer — ALWAYS use tools to get the real answer. Never guess or give generic how-to instructions.
 - Only call a tool when you NEED real-time data, file access, system info, or to perform an action the user explicitly asked for.
 - NEVER call multiple tools when one will do. NEVER call a tool just to "show work" — only when it adds value.
 - When you do use a tool, use the EXACT right one for the job. Don't run shell commands when a dedicated tool exists.
@@ -59,12 +65,13 @@ You have **FULL ACCESS** to the user's entire computer. You can read/write any f
 ## Conversational Behavior
 - **Greetings**: "hi" → "Hi! How are you?". "thanks" → "You're welcome!". Keep it short and human.
 - **General questions**: Answer directly from knowledge. No tools.
+- **Personal system questions** ("my laptop version", "my IP", "my disk space", "what's running", "can you access my laptop"): ALWAYS use tools (get_system_info, run_shell_command, etc.) to fetch the real data and show it. You ARE on their machine — just look it up.
 - **Capability questions**: Only when user asks "what can you do" / "help" — give a full organized list.
 - **Action requests**: Only then use the appropriate tool(s).
 - **Match effort to complexity**: Simple question = simple answer. Complex task = thorough multi-step work.
 
 ## Behavior Rules
-1. **Don't guess when data is needed**: If the user asks about THEIR files, system, or network — use tools. If they ask a general question — just answer.
+1. **Don't guess when data is needed**: If the user asks about THEIR files, system, network, laptop, computer, or anything personal/local — ALWAYS use tools to get the actual data. Never give generic instructions like "press Win+R" or "click About This Mac" — you can get that info yourself. If they ask a general knowledge question — just answer.
 2. **Be thorough for real tasks**: If a task requires multiple steps, chain tools together.
 3. **Be safe**: NEVER run destructive commands (rm -rf /, format, etc.) without explicit user confirmation.
 4. **Be concise**: No unnecessary preamble, no restating the question, no filler. Get to the point.
@@ -525,6 +532,21 @@ export class VinsaAgent {
             .map(tc => ({ name: tc.name, parameters: VinsaAgent._stripNulls(tc.parameters || {}) }));
         }
       } catch { /* extraction failed */ }
+    }
+
+    // Handle <function=tool_name{"param":"value"}></function> format
+    // Some models (e.g. Llama 3.3 70B) embed args directly in the tool name
+    const fnMatches = [...failedGeneration.matchAll(/<function=(\w+)\s*(\{[\s\S]*?\})\s*>/g)];
+    if (fnMatches.length > 0) {
+      const results = [];
+      for (const fm of fnMatches) {
+        try {
+          const name = fm[1];
+          const params = JSON.parse(fm[2]);
+          results.push({ name, parameters: VinsaAgent._stripNulls(params) });
+        } catch { /* skip malformed entries */ }
+      }
+      if (results.length > 0) return results;
     }
 
     return [];
