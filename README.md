@@ -68,15 +68,20 @@
 ## Installation
 
 ```bash
-# Install globally from npm
+# Install globally (recommended — makes `vinsa` available everywhere)
 npm install -g vinsa-cli
 
-# Or clone and link
+# Or run directly without installing
+npx vinsa-cli
+
+# Or clone and link for development
 git clone https://github.com/lagishettyvignesh/vinsa-cli.git
 cd vinsa-cli
 npm install
 npm link
 ```
+
+> **⚠️ Note:** You must use `npm install -g` (global) to use `vinsa` as a command. A local `npm install vinsa-cli` won't add it to your PATH. Alternatively, use `npx vinsa-cli` to run without installing globally.
 
 ### Setup
 
