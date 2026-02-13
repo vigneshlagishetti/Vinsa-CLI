@@ -25,7 +25,7 @@ import { getMcpManager, autoSetupDefaultServers } from './mcp.js';
 import {
   printBanner, printResponse, printDivider, printPrompt, printInfo,
   printError, printSuccess, printWarning, createSpinner, colors,
-  printToolCall, printToolResult, printRetry, printCommandBox, printCommandActions,
+  printToolCall, printToolResult, printRetry, printCommandCard, printCommandActions,
 } from './ui.js';
 import {
   showConfig, clearHistory, addToHistory, getApiKey, setApiKey, getModel,
@@ -117,62 +117,92 @@ function question(rl, prompt) {
 }
 
 // ─── Command Extraction & Interactive Execution ───
-// Detects shell commands in LLM responses and offers Run/Edit/Copy/Skip actions.
+// Detects shell commands in LLM responses and renders VS Code-style command cards.
 
 const SHELL_LANGS = /^(?:bash|sh|powershell|ps1|cmd|bat|shell|zsh|terminal|console)$/i;
 
 /**
- * Extract shell command blocks from a markdown response.
- * Only matches fenced code blocks with a shell-like language tag.
+ * Parse a markdown response into command cards.
+ * Returns array of { header, command, description } objects,
+ * or empty array if no shell commands found.
  */
-function extractShellCommands(text) {
-  const regex = /```(\w+)\n([\s\S]*?)```/g;
-  const commands = [];
+function parseCommandResponse(text) {
+  const codeBlockRegex = /```(\w+)\n([\s\S]*?)```/g;
+  const cards = [];
+  let lastIndex = 0;
   let match;
-  while ((match = regex.exec(text)) !== null) {
+
+  while ((match = codeBlockRegex.exec(text)) !== null) {
     const lang = match[1];
     const code = match[2].trim();
-    if (code && SHELL_LANGS.test(lang)) {
-      commands.push(code);
-    }
+    if (!code || !SHELL_LANGS.test(lang)) continue;
+
+    // Text before this code block → header
+    const before = text.slice(lastIndex, match.index).trim();
+    // Text after this code block (until next code block or end)
+    const afterStart = match.index + match[0].length;
+
+    // Peek ahead to find next code block or end
+    const nextBlockMatch = /```\w+\n/.exec(text.slice(afterStart));
+    const afterEnd = nextBlockMatch
+      ? afterStart + nextBlockMatch.index
+      : text.length;
+    const after = text.slice(afterStart, afterEnd).trim();
+
+    // Build a short header from the text before the code block
+    let header = before
+      .replace(/^#+\s*/gm, '')       // strip markdown headings
+      .replace(/\*\*/g, '')          // strip bold markers
+      .replace(/\n+/g, ' ')         // collapse newlines
+      .trim();
+    if (!header) header = 'Command suggestion';
+    // Cap header at ~80 chars
+    if (header.length > 80) header = header.slice(0, 77) + '...';
+
+    cards.push({ header, command: code, description: after });
+    lastIndex = afterEnd;
   }
-  return commands;
+
+  return cards;
 }
 
 /**
- * Prompt user to Run / Edit / Copy / Skip each detected command.
+ * Render response with command cards and interactive actions.
+ * Returns true if commands were found and rendered, false otherwise.
  */
-async function promptCommandActions(rl, commands) {
-  for (const cmd of commands) {
-    printCommandBox(cmd);
+async function renderWithCommandCards(rl, response) {
+  const cards = parseCommandResponse(response);
+  if (cards.length === 0) return false;
+
+  for (const card of cards) {
+    printCommandCard(card.header, card.command, card.description);
     printCommandActions();
-    const answer = await question(rl, colors.dim('  › '));
+    console.log('');
+
+    const answer = await question(rl, colors.dim('  Action › '));
     const choice = answer.trim().toLowerCase();
 
     if (choice === 'r' || choice === 'run' || choice === '') {
       // Default = Run
-      await executeCommandInteractive(cmd);
-    } else if (choice === 'e' || choice === 'edit') {
-      const edited = await question(rl, colors.accent('  $ '));
-      if (edited.trim()) {
-        await executeCommandInteractive(edited.trim());
-      }
-    } else if (choice === 'c' || choice === 'copy') {
+      await executeCommandInteractive(card.command);
+    } else if (choice === 'i' || choice === 'insert' || choice === 'copy' || choice === 'c') {
+      // Insert = Copy to clipboard
       try {
         if (process.platform === 'win32') {
-          execSync('clip', { input: cmd, encoding: 'utf-8' });
+          execSync('clip', { input: card.command, encoding: 'utf-8' });
         } else if (process.platform === 'darwin') {
-          execSync('pbcopy', { input: cmd, encoding: 'utf-8' });
+          execSync('pbcopy', { input: card.command, encoding: 'utf-8' });
         } else {
-          execSync('xclip -selection clipboard', { input: cmd, encoding: 'utf-8' });
+          execSync('xclip -selection clipboard', { input: card.command, encoding: 'utf-8' });
         }
         printSuccess('Copied to clipboard.');
       } catch {
         printWarning('Could not copy to clipboard.');
       }
     }
-    // 's' / 'skip' / anything else = skip
+    // 'close' / anything else = skip
   }
+  return true;
 }
 
 /**
@@ -462,14 +492,13 @@ export async function startChat({ continueSession = false } = {}) {
 
       spinner.stop();
       process.stdout.write('\u001B[?25h'); // Ensure cursor visible
-      printResponse(response);
-      lastResponse = response; // Track for /copy
 
-      // ─── Interactive Command Actions ───
-      const detectedCmds = extractShellCommands(response);
-      if (detectedCmds.length > 0) {
-        await promptCommandActions(rl, detectedCmds);
+      // ─── Render: command card or normal response ───
+      const hasCards = await renderWithCommandCards(rl, response);
+      if (!hasCards) {
+        printResponse(response);
       }
+      lastResponse = response; // Track for /copy
 
       // Save to persistent history
       addToHistory({ role: 'user', content: trimmed.slice(0, 200) });
@@ -504,14 +533,9 @@ export async function startChat({ continueSession = false } = {}) {
               onModelSwitch: (from, to, msg) => { retrySpinner.stop(); printInfo(`  ↻ ${msg}`); retrySpinner.start(); },
             });
             retrySpinner.stop();
-            printResponse(retryResponse);
+            const retryHasCards = await renderWithCommandCards(rl, retryResponse);
+            if (!retryHasCards) printResponse(retryResponse);
             lastResponse = retryResponse;
-
-            // ─── Interactive Command Actions ───
-            const retryCmds = extractShellCommands(retryResponse);
-            if (retryCmds.length > 0) {
-              await promptCommandActions(rl, retryCmds);
-            }
 
             addToHistory({ role: 'user', content: trimmed.slice(0, 200) });
             addToHistory({ role: 'assistant', content: (retryResponse || '').slice(0, 200) });
@@ -1185,10 +1209,9 @@ async function handleSlashCommand(cmd, agent, mcpManager, rl) {
               onToolResult: (r) => { spinner.stop(); printToolResult(r); spinner.start(); },
             });
             spinner.stop();
-            printResponse(response);
+            const voiceHasCards1 = await renderWithCommandCards(rl, response);
+            if (!voiceHasCards1) printResponse(response);
             lastResponse = response;
-            const voiceCmds1 = extractShellCommands(response);
-            if (voiceCmds1.length > 0) await promptCommandActions(rl, voiceCmds1);
           }
         } else {
           // Linux/macOS: try sox (rec command)
@@ -1211,10 +1234,9 @@ async function handleSlashCommand(cmd, agent, mcpManager, rl) {
               onToolResult: (r) => { spinner.stop(); printToolResult(r); spinner.start(); },
             });
             spinner.stop();
-            printResponse(response);
+            const voiceHasCards2 = await renderWithCommandCards(rl, response);
+            if (!voiceHasCards2) printResponse(response);
             lastResponse = response;
-            const voiceCmds2 = extractShellCommands(response);
-            if (voiceCmds2.length > 0) await promptCommandActions(rl, voiceCmds2);
           } catch (recErr) {
             printWarning('sox (rec) not installed. Install: sudo apt install sox');
             printInfo('Alternative: Type your message or use `vinsa ask "prompt"`');
@@ -1425,10 +1447,9 @@ async function handleSlashCommand(cmd, agent, mcpManager, rl) {
           },
         });
         spinner.stop();
-        printResponse(result.combined);
+        const multiHasCards = await renderWithCommandCards(rl, result.combined);
+        if (!multiHasCards) printResponse(result.combined);
         lastResponse = result.combined;
-        const multiCmds = extractShellCommands(result.combined);
-        if (multiCmds.length > 0) await promptCommandActions(rl, multiCmds);
       } catch (err) {
         spinner.stop();
         printError(`Multi-agent failed: ${err.message}`);

@@ -117,21 +117,44 @@ export function printPrompt() {
 export function printCommandBox(command) {
   const lines = command.split('\n');
   const maxLen = Math.max(...lines.map(l => l.length), 10);
-  console.log('');
-  console.log(colors.accent('  ╭─' + '─'.repeat(maxLen + 2) + '─╮'));
+  const pad = maxLen + 2;
+  console.log(colors.dim('  ┌' + '─'.repeat(pad) + '┐'));
   for (const line of lines) {
-    console.log(colors.accent('  │ ') + colors.bold(line.padEnd(maxLen)) + colors.accent(' │'));
+    console.log(colors.dim('  │ ') + chalk.white.bold(line.padEnd(maxLen)) + colors.dim(' │'));
   }
-  console.log(colors.accent('  ╰─' + '─'.repeat(maxLen + 2) + '─╯'));
+  console.log(colors.dim('  └' + '─'.repeat(pad) + '┘'));
+}
+
+export function printCommandCard(header, command, description) {
+  console.log('');
+  // Header with checkmark — like VS Code's "✔ Preparing tracert command snippet"
+  console.log(colors.success('  ✔  ') + colors.dim(header));
+  console.log('');
+
+  // Command box
+  printCommandBox(command);
+
+  // Description / parameter hints
+  if (description) {
+    console.log('');
+    const descLines = description.split('\n').filter(l => l.trim());
+    for (const line of descLines) {
+      // Render lines starting with - or * or • as bullet points
+      const trimmed = line.replace(/^\s*[-*•]\s*/, '').trim();
+      if (trimmed) {
+        console.log(colors.dim('  • ') + colors.dim(trimmed));
+      }
+    }
+  }
+  console.log('');
 }
 
 export function printCommandActions() {
   console.log(
     '  ' +
-    colors.success.bold('[R]un') + colors.dim('  ·  ') +
-    colors.accent.bold('[E]dit & Run') + colors.dim('  ·  ') +
-    colors.warning.bold('[C]opy') + colors.dim('  ·  ') +
-    colors.dim('[S]kip')
+    chalk.bgGreen.black.bold(' Run ') + '  ' +
+    chalk.bgWhite.black.bold(' Insert ') + '  ' +
+    chalk.bgWhite.black.bold(' Close ')
   );
 }
 
