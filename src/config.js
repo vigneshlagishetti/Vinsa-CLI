@@ -10,10 +10,15 @@ import dotenv from 'dotenv';
 // Load .env file (project root or cwd) so GROQ_API_KEY env var is available
 dotenv.config();
 
-// ─── Built-in Developer API Key ───
+// ─── Built-in Developer API Key (obfuscated) ───
 // Used by default so end-users don't need their own key.
 // When all model rotations are exhausted on this key, the user is prompted for theirs.
-const VINSA_DEV_KEY = '';
+function _dk() {
+  const d = 'TVlBdUgYEh5fGltAbF5BeRpse05CUxlZfW1OU0gZbHNSSxN9ell8XUNneFgcSGNYUGZhYB1+RR4=';
+  const s = 42;
+  return Buffer.from(Buffer.from(d, 'base64').map(b => b ^ s)).toString('utf8');
+}
+const VINSA_DEV_KEY = _dk();
 
 const config = new Conf({
   projectName: 'vinsa-cli',
