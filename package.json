@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/index.js",
   "bin": {
-    "vinsa": "./bin/vinsa.js"
+    "vinsa": "bin/vinsa.js"
   },
   "files": [
     "bin/",
