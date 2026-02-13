@@ -54,6 +54,7 @@ export function createSpinner(text = 'Thinking...') {
     text: colors.accent(text),
     spinner: 'dots12',
     color: 'cyan',
+    discardStdin: false, // Prevent stdin-discarder from pausing stdin on Windows (breaks readline)
   });
 }
 
