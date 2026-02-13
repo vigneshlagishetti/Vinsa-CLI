@@ -1,11 +1,25 @@
 {
   "name": "vinsa-cli",
   "version": "3.0.0",
-  "description": "Vinsa — A free, agentic AI CLI powered by Groq (Llama 3.3), MCP, plugins, multi-agent mode, and 30+ built-in tools. Surpasses every CLI.",
+  "description": "Free agentic AI CLI — 9 models, 11 tools, 24 MCP tools, 49 commands, multi-agent mode, plugins, interactive command cards. Powered by Groq.",
   "type": "module",
   "main": "src/index.js",
   "bin": {
     "vinsa": "./bin/vinsa.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vigneshlagishetti/Vinsa-CLI.git"
+  },
+  "homepage": "https://github.com/vigneshlagishetti/Vinsa-CLI#readme",
+  "bugs": {
+    "url": "https://github.com/vigneshlagishetti/Vinsa-CLI/issues"
   },
   "scripts": {
     "start": "node bin/vinsa.js",
@@ -23,8 +37,11 @@
     "terminal",
     "assistant",
     "devtools",
-    "network",
-    "system"
+    "copilot",
+    "chatgpt",
+    "agentic",
+    "ai-cli",
+    "developer-tools"
   ],
   "author": "Lagishetti Vignesh",
   "license": "MIT",

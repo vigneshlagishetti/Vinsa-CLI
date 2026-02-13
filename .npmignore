@@ -1,0 +1,23 @@
+# Secrets & env
+secrets.txt
+.env
+.env.*
+
+# Dev & config
+.gitignore
+.git/
+.vinsa/
+.vscode/
+.github/
+
+# Build artifacts
+node_modules/
+dist/
+*.log
+
+# Tests
+test/
+tests/
+__tests__/
+*.test.js
+*.spec.js
