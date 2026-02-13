@@ -114,6 +114,27 @@ export function printPrompt() {
   return colors.brand.bold('  You › ');
 }
 
+export function printCommandBox(command) {
+  const lines = command.split('\n');
+  const maxLen = Math.max(...lines.map(l => l.length), 10);
+  console.log('');
+  console.log(colors.accent('  ╭─' + '─'.repeat(maxLen + 2) + '─╮'));
+  for (const line of lines) {
+    console.log(colors.accent('  │ ') + colors.bold(line.padEnd(maxLen)) + colors.accent(' │'));
+  }
+  console.log(colors.accent('  ╰─' + '─'.repeat(maxLen + 2) + '─╯'));
+}
+
+export function printCommandActions() {
+  console.log(
+    '  ' +
+    colors.success.bold('[R]un') + colors.dim('  ·  ') +
+    colors.accent.bold('[E]dit & Run') + colors.dim('  ·  ') +
+    colors.warning.bold('[C]opy') + colors.dim('  ·  ') +
+    colors.dim('[S]kip')
+  );
+}
+
 export function printSystemInfo(info) {
   console.log('');
   console.log(colors.brand.bold('  System Information'));

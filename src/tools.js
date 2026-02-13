@@ -142,24 +142,25 @@ export const toolDefinitions = [
   },
   {
     name: 'list_directory',
-    description: 'List files and folders in any directory on the computer with details (size, type, modified date). Use absolute paths to browse anywhere (e.g., C:\\, /home, /etc).',
+    description: 'List files and folders in any directory on the computer with details (size, type, modified date). Use absolute paths to browse anywhere (e.g., C:\\, /home, /etc). Results capped at 500 items by default — use a specific subdirectory for large directories.',
     parameters: {
       type: 'object',
       properties: {
         dirPath: { type: 'string', description: 'Absolute or relative path to any directory on the computer (default: current directory)' },
-        recursive: { type: 'boolean', description: 'List recursively (default: false, up to 3 levels deep)' },
+        recursive: { type: 'boolean', description: 'List recursively (default: false, up to 3 levels deep). AVOID on root drives like C:\\ or /' },
+        maxItems: { type: 'number', description: 'Maximum items to return (default: 500). Use smaller values for large directories.' },
       },
       required: [],
     },
   },
   {
     name: 'search_files',
-    description: 'Search for files by name pattern or search inside files for a text/regex pattern anywhere on the computer. Use absolute paths to search any directory.',
+    description: 'Search for files by name pattern or search inside files for text. To find files by topic (e.g. "find my resume"), use pattern like "*resume*" or "*resume*.pdf" to match the word in filenames. Use absolute paths to search any directory.',
     parameters: {
       type: 'object',
       properties: {
         directory: { type: 'string', description: 'Absolute or relative path to any directory on the computer (default: current directory)' },
-        pattern: { type: 'string', description: 'Filename glob pattern (e.g., "*.js", "*.log")' },
+        pattern: { type: 'string', description: 'Filename glob pattern — supports * wildcards. Examples: "*.js" (all JS files), "*resume*" (files with "resume" in name), "*resume*.pdf" (PDF resumes)' },
         contentSearch: { type: 'string', description: 'Search inside files for this text/regex' },
         maxResults: { type: 'number', description: 'Maximum results to return (default: 100)' },
       },
@@ -445,12 +446,14 @@ function generateDiffPreview(oldContent, newContent, filePath) {
   return lines.join('\n');
 }
 
-async function listDirectory({ dirPath = '.', recursive = false }) {
+async function listDirectory({ dirPath = '.', recursive = false, maxItems = 500 }) {
   try {
     const resolved = path.resolve(dirPath);
     const entries = fs.readdirSync(resolved, { withFileTypes: true });
     const items = [];
+    let truncated = false;
     for (const entry of entries) {
+      if (items.length >= maxItems) { truncated = true; break; }
       const fullPath = path.join(resolved, entry.name);
       try {
         const stat = fs.statSync(fullPath);
@@ -464,6 +467,7 @@ async function listDirectory({ dirPath = '.', recursive = false }) {
           try {
             const subEntries = fs.readdirSync(fullPath, { withFileTypes: true });
             for (const sub of subEntries) {
+              if (items.length >= maxItems) { truncated = true; break; }
               const subFullPath = path.join(fullPath, sub.name);
               try {
                 const subStat = fs.statSync(subFullPath);
@@ -478,6 +482,7 @@ async function listDirectory({ dirPath = '.', recursive = false }) {
                   try {
                     const deepEntries = fs.readdirSync(subFullPath, { withFileTypes: true });
                     for (const deep of deepEntries) {
+                      if (items.length >= maxItems) { truncated = true; break; }
                       items.push({
                         name: `    ${entry.name}/${sub.name}/${deep.name}`,
                         type: deep.isDirectory() ? 'directory' : 'file',
@@ -493,7 +498,12 @@ async function listDirectory({ dirPath = '.', recursive = false }) {
         }
       } catch { /* skip inaccessible files */ }
     }
-    return { success: true, path: resolved, items, total: entries.length };
+    const result = { success: true, path: resolved, items, total: entries.length };
+    if (truncated) {
+      result.truncated = true;
+      result.warning = `Results capped at ${maxItems} items (total in directory: ${entries.length}). Use a more specific path or search_files to find specific files.`;
+    }
+    return result;
   } catch (err) {
     return { success: false, error: err.message };
   }

@@ -65,6 +65,7 @@ You have **FULL ACCESS** to the user's entire computer. You can read/write any f
 ## Conversational Behavior
 - **Greetings**: "hi" → "Hi! How are you?". "thanks" → "You're welcome!". Keep it short and human.
 - **General questions**: Answer directly from knowledge. No tools.
+- **Command/syntax questions** (user asks "command for X", "traceroute", "how to check disk in terminal", etc.): Provide the command in a fenced code block with the shell language. Do NOT execute the command or use tools — the user wants the syntax. Example: \`\`\`powershell\ntracert {host_or_ip}\n\`\`\`
 - **Personal system questions** ("my laptop version", "my IP", "my disk space", "what's running", "can you access my laptop"): ALWAYS use tools (get_system_info, run_shell_command, etc.) to fetch the real data and show it. You ARE on their machine — just look it up.
 - **Capability questions**: Only when user asks "what can you do" / "help" — give a full organized list.
 - **Action requests**: Only then use the appropriate tool(s).
@@ -79,6 +80,7 @@ You have **FULL ACCESS** to the user's entire computer. You can read/write any f
 6. **Be honest**: If you can't do something, say so clearly.
 7. **No over-explaining**: Don't explain what you're about to do unless it's a complex or risky operation. Just do it and show the result.
 8. **Tool parameters**: When calling tools, NEVER pass null for any parameter. Simply OMIT optional parameters you don't need — do not include them at all.
+9. **Avoid huge listings**: NEVER use recursive listing on root drives (C:\, /, /home) — it returns too much data. For broad requests like "my files in C drive", list only the TOP-LEVEL items (no recursive). Only use recursive on specific subdirectories. If a tool result says it was truncated, summarize what you have and suggest narrowing the query.
 
 ## Platform Awareness
 - Detect the OS from system info and use platform-appropriate commands
@@ -87,7 +89,7 @@ You have **FULL ACCESS** to the user's entire computer. You can read/write any f
 
 ## Response Format
 - Use markdown for formatting
-- Use code blocks for commands and output
+- **Commands**: ALWAYS wrap terminal/shell commands in fenced code blocks with the language tag (\`\`\`bash, \`\`\`powershell, \`\`\`cmd). This enables the CLI to offer interactive Run/Copy actions to the user.
 - Use tables for structured data
 - Keep responses focused and actionable`;
 
@@ -231,6 +233,7 @@ export class VinsaAgent {
     this.conversationHistory = [];
     this.client = null;
     this.rotator = null;
+    this.mcpManager = null;
     this.mcpTools = [];
     this.pluginToolDefs = [];
     this.groqTools = [];
@@ -282,8 +285,9 @@ export class VinsaAgent {
   /**
    * Add MCP tools to the agent (called by MCP client)
    */
-  addMcpTools(tools) {
+  addMcpTools(tools, mcpManager) {
     this.mcpTools.push(...tools);
+    if (mcpManager) this.mcpManager = mcpManager;
     if (this.client) this._rebuildTools();
   }
 
@@ -350,6 +354,7 @@ export class VinsaAgent {
         }
 
         // Non-rate-limit error
+        const isContextOverflow = err.message.includes('reduce the length');
         nonRateLimitFailures++;
         if (nonRateLimitFailures > maxRetries) {
           if (err.message.includes('401') || err.message.includes('invalid_api_key')) {
@@ -365,11 +370,20 @@ export class VinsaAgent {
         if (onRetry) onRetry(nonRateLimitFailures, maxRetries, err.message);
         else printRetry(nonRateLimitFailures, maxRetries, err.message);
 
-        // Add error context so the AI can self-correct
-        this.conversationHistory.push({
-          role: 'user',
-          content: `[SYSTEM] Previous attempt failed with error: ${err.message}. Please try a different approach.`,
-        });
+        if (isContextOverflow) {
+          // Trim conversation history to prevent repeating the overflow
+          // Keep the last user message, drop tool-heavy middle messages
+          const lastUser = this.conversationHistory.filter(m => m.role === 'user').pop();
+          this.conversationHistory = lastUser
+            ? [{ role: 'user', content: lastUser.content + '\n\n[SYSTEM] The previous tool returned too much data. Please use a more targeted approach — e.g., list only top-level items (no recursive), or narrow the search scope.' }]
+            : this.conversationHistory.slice(-2);
+        } else {
+          // Add error context so the AI can self-correct
+          this.conversationHistory.push({
+            role: 'user',
+            content: `[SYSTEM] Previous attempt failed with error: ${err.message}. Please try a different approach.`,
+          });
+        }
       }
     }
 
@@ -431,7 +445,9 @@ export class VinsaAgent {
               else printToolCall(functionName, functionArgs);
 
               let result;
-              if (isPluginTool(functionName)) {
+              if (this.mcpManager && this.mcpManager.isMcpTool(functionName)) {
+                result = await this.mcpManager.executeTool(functionName, functionArgs);
+              } else if (isPluginTool(functionName)) {
                 result = await executePlugin(functionName, functionArgs);
               } else {
                 result = await executeTool(functionName, functionArgs);
@@ -440,7 +456,7 @@ export class VinsaAgent {
               if (onToolResult) onToolResult(result);
               else printToolResult(result);
 
-              messages.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result) });
+              messages.push({ role: 'tool', tool_call_id: tc.id, content: VinsaAgent._truncateResult(JSON.stringify(result)) });
             }
             continue; // continue the agent while-loop for the LLM's next response
           }
@@ -482,9 +498,11 @@ export class VinsaAgent {
         if (onToolCall) onToolCall(functionName, functionArgs);
         else printToolCall(functionName, functionArgs);
 
-        // Route to plugin handler or built-in tool handler
+        // Route to MCP handler, plugin handler, or built-in tool handler
         let result;
-        if (isPluginTool(functionName)) {
+        if (this.mcpManager && this.mcpManager.isMcpTool(functionName)) {
+          result = await this.mcpManager.executeTool(functionName, functionArgs);
+        } else if (isPluginTool(functionName)) {
           result = await executePlugin(functionName, functionArgs);
         } else {
           result = await executeTool(functionName, functionArgs);
@@ -496,7 +514,7 @@ export class VinsaAgent {
         messages.push({
           role: 'tool',
           tool_call_id: tc.id,
-          content: JSON.stringify(result),
+          content: VinsaAgent._truncateResult(JSON.stringify(result)),
         });
       }
     }
@@ -553,13 +571,40 @@ export class VinsaAgent {
   }
 
   /**
-   * Strip null and undefined values from an object (shallow).
+   * Strip null/undefined and coerce mistyped values (shallow).
+   * Fixes LLMs sending "true" (string) instead of true (boolean), etc.
    */
   static _stripNulls(obj) {
     if (!obj || typeof obj !== 'object') return {};
     return Object.fromEntries(
-      Object.entries(obj).filter(([, v]) => v !== null && v !== undefined)
+      Object.entries(obj)
+        .filter(([, v]) => v !== null && v !== undefined)
+        .map(([k, v]) => [k, VinsaAgent._coerceValue(v)])
     );
+  }
+
+  /**
+   * Coerce common LLM mistyped values:
+   *   "true"/"false" → boolean, numeric strings → number
+   */
+  static _coerceValue(v) {
+    if (typeof v === 'string') {
+      if (v === 'true') return true;
+      if (v === 'false') return false;
+      // Coerce pure numeric strings ("123", "3.14") but not things like paths
+      if (/^-?\d+(\.\d+)?$/.test(v) && v.length < 16) return Number(v);
+    }
+    return v;
+  }
+
+  /**
+   * Truncate a tool result string to prevent context overflow.
+   * Max ~30KB — large enough to be useful, small enough for any model.
+   */
+  static _truncateResult(resultStr, maxBytes = 15000) {
+    if (resultStr.length <= maxBytes) return resultStr;
+    const truncated = resultStr.slice(0, maxBytes);
+    return truncated + '\n\n... [TRUNCATED — result was ' + Math.round(resultStr.length / 1024) + 'KB, kept first ' + Math.round(maxBytes / 1024) + 'KB. Summarize what you have and suggest the user narrow the query if needed.]';
   }
 
   async ask(prompt, { silent = false } = {}) {

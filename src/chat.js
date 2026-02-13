@@ -25,7 +25,7 @@ import { getMcpManager, autoSetupDefaultServers } from './mcp.js';
 import {
   printBanner, printResponse, printDivider, printPrompt, printInfo,
   printError, printSuccess, printWarning, createSpinner, colors,
-  printToolCall, printToolResult, printRetry,
+  printToolCall, printToolResult, printRetry, printCommandBox, printCommandActions,
 } from './ui.js';
 import {
   showConfig, clearHistory, addToHistory, getApiKey, setApiKey, getModel,
@@ -114,6 +114,93 @@ function question(rl, prompt) {
   return new Promise((resolve) => {
     rl.question(prompt, (answer) => resolve(answer));
   });
+}
+
+// ─── Command Extraction & Interactive Execution ───
+// Detects shell commands in LLM responses and offers Run/Edit/Copy/Skip actions.
+
+const SHELL_LANGS = /^(?:bash|sh|powershell|ps1|cmd|bat|shell|zsh|terminal|console)$/i;
+
+/**
+ * Extract shell command blocks from a markdown response.
+ * Only matches fenced code blocks with a shell-like language tag.
+ */
+function extractShellCommands(text) {
+  const regex = /```(\w+)\n([\s\S]*?)```/g;
+  const commands = [];
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const lang = match[1];
+    const code = match[2].trim();
+    if (code && SHELL_LANGS.test(lang)) {
+      commands.push(code);
+    }
+  }
+  return commands;
+}
+
+/**
+ * Prompt user to Run / Edit / Copy / Skip each detected command.
+ */
+async function promptCommandActions(rl, commands) {
+  for (const cmd of commands) {
+    printCommandBox(cmd);
+    printCommandActions();
+    const answer = await question(rl, colors.dim('  › '));
+    const choice = answer.trim().toLowerCase();
+
+    if (choice === 'r' || choice === 'run' || choice === '') {
+      // Default = Run
+      await executeCommandInteractive(cmd);
+    } else if (choice === 'e' || choice === 'edit') {
+      const edited = await question(rl, colors.accent('  $ '));
+      if (edited.trim()) {
+        await executeCommandInteractive(edited.trim());
+      }
+    } else if (choice === 'c' || choice === 'copy') {
+      try {
+        if (process.platform === 'win32') {
+          execSync('clip', { input: cmd, encoding: 'utf-8' });
+        } else if (process.platform === 'darwin') {
+          execSync('pbcopy', { input: cmd, encoding: 'utf-8' });
+        } else {
+          execSync('xclip -selection clipboard', { input: cmd, encoding: 'utf-8' });
+        }
+        printSuccess('Copied to clipboard.');
+      } catch {
+        printWarning('Could not copy to clipboard.');
+      }
+    }
+    // 's' / 'skip' / anything else = skip
+  }
+}
+
+/**
+ * Execute a command in the user's shell and print output.
+ */
+async function executeCommandInteractive(command) {
+  try {
+    printInfo('Running...');
+    const shell = process.platform === 'win32' ? 'powershell.exe' : '/bin/bash';
+    const output = execSync(command, {
+      encoding: 'utf-8',
+      timeout: 120000,
+      cwd: process.cwd(),
+      shell,
+      maxBuffer: 1024 * 1024 * 10,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    if (output.trim()) {
+      console.log('');
+      console.log(colors.dim(output.trimEnd()));
+    }
+    printSuccess('Done.');
+  } catch (err) {
+    const stderr = err.stderr ? err.stderr.trim() : '';
+    const stdout = err.stdout ? err.stdout.trim() : '';
+    if (stdout) console.log(colors.dim(stdout));
+    printError(stderr || err.message);
+  }
 }
 
 // ─── First-run setup: auto-detect missing API key & prompt ───
@@ -266,7 +353,7 @@ export async function startChat({ continueSession = false } = {}) {
     if (connected.length > 0) {
       const mcpToolDefs = mcpManager.getToolDefinitions();
       if (mcpToolDefs.length > 0) {
-        agent.addMcpTools(mcpToolDefs);
+        agent.addMcpTools(mcpToolDefs, mcpManager);
         mcpToolCount = mcpToolDefs.length;
       }
     }
@@ -378,6 +465,12 @@ export async function startChat({ continueSession = false } = {}) {
       printResponse(response);
       lastResponse = response; // Track for /copy
 
+      // ─── Interactive Command Actions ───
+      const detectedCmds = extractShellCommands(response);
+      if (detectedCmds.length > 0) {
+        await promptCommandActions(rl, detectedCmds);
+      }
+
       // Save to persistent history
       addToHistory({ role: 'user', content: trimmed.slice(0, 200) });
       addToHistory({ role: 'assistant', content: (response || '').slice(0, 200) });
@@ -413,6 +506,13 @@ export async function startChat({ continueSession = false } = {}) {
             retrySpinner.stop();
             printResponse(retryResponse);
             lastResponse = retryResponse;
+
+            // ─── Interactive Command Actions ───
+            const retryCmds = extractShellCommands(retryResponse);
+            if (retryCmds.length > 0) {
+              await promptCommandActions(rl, retryCmds);
+            }
+
             addToHistory({ role: 'user', content: trimmed.slice(0, 200) });
             addToHistory({ role: 'assistant', content: (retryResponse || '').slice(0, 200) });
           } catch (retryErr) {
@@ -1087,6 +1187,8 @@ async function handleSlashCommand(cmd, agent, mcpManager, rl) {
             spinner.stop();
             printResponse(response);
             lastResponse = response;
+            const voiceCmds1 = extractShellCommands(response);
+            if (voiceCmds1.length > 0) await promptCommandActions(rl, voiceCmds1);
           }
         } else {
           // Linux/macOS: try sox (rec command)
@@ -1111,6 +1213,8 @@ async function handleSlashCommand(cmd, agent, mcpManager, rl) {
             spinner.stop();
             printResponse(response);
             lastResponse = response;
+            const voiceCmds2 = extractShellCommands(response);
+            if (voiceCmds2.length > 0) await promptCommandActions(rl, voiceCmds2);
           } catch (recErr) {
             printWarning('sox (rec) not installed. Install: sudo apt install sox');
             printInfo('Alternative: Type your message or use `vinsa ask "prompt"`');
@@ -1323,6 +1427,8 @@ async function handleSlashCommand(cmd, agent, mcpManager, rl) {
         spinner.stop();
         printResponse(result.combined);
         lastResponse = result.combined;
+        const multiCmds = extractShellCommands(result.combined);
+        if (multiCmds.length > 0) await promptCommandActions(rl, multiCmds);
       } catch (err) {
         spinner.stop();
         printError(`Multi-agent failed: ${err.message}`);
