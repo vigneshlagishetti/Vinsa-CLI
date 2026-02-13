@@ -6,6 +6,11 @@
 import Conf from 'conf';
 import chalk from 'chalk';
 
+// ─── Built-in Developer API Key ───
+// Used by default so end-users don't need their own key.
+// When all model rotations are exhausted on this key, the user is prompted for theirs.
+const VINSA_DEV_KEY = Your_GROQ_API_KEY;
+
 const config = new Conf({
   projectName: 'vinsa-cli',
   schema: {
@@ -28,8 +33,22 @@ const config = new Conf({
 });
 
 export function getApiKey() {
-  // Priority: env var > stored config
-  return process.env.GROQ_API_KEY || config.get('groqApiKey');
+  // Priority: env var > user stored config > built-in dev key
+  return process.env.GROQ_API_KEY || config.get('groqApiKey') || VINSA_DEV_KEY;
+}
+
+/**
+ * Returns true if no user-provided key exists (using the built-in dev key).
+ */
+export function isUsingDevKey() {
+  return !process.env.GROQ_API_KEY && !config.get('groqApiKey');
+}
+
+/**
+ * Returns only the user-provided key (env var or stored), or empty string.
+ */
+export function getUserApiKey() {
+  return process.env.GROQ_API_KEY || config.get('groqApiKey') || '';
 }
 
 export function setApiKey(key) {

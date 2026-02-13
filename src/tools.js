@@ -11,6 +11,7 @@ import dns from 'dns';
 import { promisify } from 'util';
 import si from 'systeminformation';
 import { getHooks, getConfirmWrites } from './config.js';
+import { gitOperations } from './git.js';
 
 const dnsResolve = promisify(dns.resolve);
 const dnsReverse = promisify(dns.reverse);
@@ -103,24 +104,24 @@ export function undoLastChange() {
 export const toolDefinitions = [
   {
     name: 'run_shell_command',
-    description: 'Execute a shell command on the user\'s system and return the output. Use for running scripts, installing packages, checking system status, git commands, docker commands, etc. ALWAYS prefer this for any system operation. On Windows uses PowerShell, on Linux/macOS uses bash.',
+    description: 'Execute any shell command anywhere on the user\'s computer and return the output. Use for running scripts, installing packages, checking system status, git commands, docker commands, navigating any directory, etc. Has full access to the entire system. On Windows uses PowerShell, on Linux/macOS uses bash.',
     parameters: {
       type: 'object',
       properties: {
         command: { type: 'string', description: 'The shell command to execute' },
-        cwd: { type: 'string', description: 'Working directory (optional, defaults to current directory)' },
-        timeout: { type: 'number', description: 'Timeout in milliseconds (default: 30000)' },
+        cwd: { type: 'string', description: 'Working directory — use absolute path to run commands anywhere on the computer (optional, defaults to current directory)' },
+        timeout: { type: 'number', description: 'Timeout in milliseconds (default: 120000)' },
       },
       required: ['command'],
     },
   },
   {
     name: 'read_file',
-    description: 'Read the contents of a file. Supports text files of any kind (code, config, logs, markdown, etc).',
+    description: 'Read the contents of any file anywhere on the computer. Supports text files of any kind (code, config, logs, markdown, etc). Use absolute paths to access any location.',
     parameters: {
       type: 'object',
       properties: {
-        filePath: { type: 'string', description: 'Absolute or relative path to the file' },
+        filePath: { type: 'string', description: 'Absolute or relative path to any file on the computer' },
         encoding: { type: 'string', description: 'File encoding (default: utf-8)' },
       },
       required: ['filePath'],
@@ -128,11 +129,11 @@ export const toolDefinitions = [
   },
   {
     name: 'write_file',
-    description: 'Write content to a file. Creates the file if it doesn\'t exist. Creates parent directories automatically.',
+    description: 'Write content to any file anywhere on the computer. Creates the file if it doesn\'t exist. Creates parent directories automatically. Use absolute paths for files outside the current directory.',
     parameters: {
       type: 'object',
       properties: {
-        filePath: { type: 'string', description: 'Absolute or relative path to the file' },
+        filePath: { type: 'string', description: 'Absolute or relative path to any file on the computer' },
         content: { type: 'string', description: 'The content to write' },
         append: { type: 'boolean', description: 'If true, append instead of overwrite (default: false)' },
       },
@@ -141,26 +142,26 @@ export const toolDefinitions = [
   },
   {
     name: 'list_directory',
-    description: 'List files and folders in a directory with details (size, type, modified date).',
+    description: 'List files and folders in any directory on the computer with details (size, type, modified date). Use absolute paths to browse anywhere (e.g., C:\\, /home, /etc).',
     parameters: {
       type: 'object',
       properties: {
-        dirPath: { type: 'string', description: 'Path to directory (default: current directory)' },
-        recursive: { type: 'boolean', description: 'List recursively (default: false, max 3 levels)' },
+        dirPath: { type: 'string', description: 'Absolute or relative path to any directory on the computer (default: current directory)' },
+        recursive: { type: 'boolean', description: 'List recursively (default: false, up to 3 levels deep)' },
       },
       required: [],
     },
   },
   {
     name: 'search_files',
-    description: 'Search for files by name pattern or search inside files for a text/regex pattern. Great for finding code, configs, or logs.',
+    description: 'Search for files by name pattern or search inside files for a text/regex pattern anywhere on the computer. Use absolute paths to search any directory.',
     parameters: {
       type: 'object',
       properties: {
-        directory: { type: 'string', description: 'Directory to search in (default: current directory)' },
+        directory: { type: 'string', description: 'Absolute or relative path to any directory on the computer (default: current directory)' },
         pattern: { type: 'string', description: 'Filename glob pattern (e.g., "*.js", "*.log")' },
         contentSearch: { type: 'string', description: 'Search inside files for this text/regex' },
-        maxResults: { type: 'number', description: 'Maximum results to return (default: 20)' },
+        maxResults: { type: 'number', description: 'Maximum results to return (default: 100)' },
       },
       required: [],
     },
@@ -181,7 +182,7 @@ export const toolDefinitions = [
   },
   {
     name: 'network_diagnostics',
-    description: 'Run network diagnostics: ping a host, DNS lookup, check ports, trace route, get public IP, speed test reference.',
+    description: 'Run network diagnostics: ping a host, DNS lookup, check ports, trace route, get public IP, scan WiFi networks, view active connections.',
     parameters: {
       type: 'object',
       properties: {
@@ -211,7 +212,7 @@ export const toolDefinitions = [
   },
   {
     name: 'process_manager',
-    description: 'Manage system processes: list running processes, find by name, or kill a process by PID.',
+    description: 'Manage any system process: list all running processes, find by name, kill any process by PID, show top CPU/memory consumers.',
     parameters: {
       type: 'object',
       properties: {
@@ -225,14 +226,92 @@ export const toolDefinitions = [
   },
   {
     name: 'code_analysis',
-    description: 'Analyze a project/codebase: detect language, count lines, list dependencies, find TODOs, check structure.',
+    description: 'Analyze any project/codebase anywhere on the computer: detect language, count lines, list dependencies, find TODOs, check structure. Use absolute paths.',
     parameters: {
       type: 'object',
       properties: {
-        projectPath: { type: 'string', description: 'Path to the project directory' },
+        projectPath: { type: 'string', description: 'Absolute or relative path to any project directory on the computer' },
         action: { type: 'string', description: '"structure", "dependencies", "todos", "stats", "overview"' },
       },
       required: ['projectPath'],
+    },
+  },
+  {
+    name: 'git_operations',
+    description: 'Full Git source control — manage repositories like a complete Git client. Supports: status, log, branch, diff, add, commit, push, pull, merge, stash, clone, init, remote, tag, blame, cherry-pick, rebase, reset, checkout, show, fetch, conflicts, repoInfo. Use this instead of shell commands for Git operations.',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          description: 'Git operation: "status", "log", "branch", "diff", "add", "commit", "push", "pull", "merge", "stash", "clone", "init", "remote", "tag", "blame", "cherryPick", "rebase", "reset", "checkout", "show", "fetch", "conflicts", "repoInfo"',
+        },
+        // Common
+        cwd: { type: 'string', description: 'Working directory (default: current directory)' },
+        // Log options
+        count: { type: 'number', description: 'Number of log entries (default: 20)' },
+        oneline: { type: 'boolean', description: 'One-line log format' },
+        graph: { type: 'boolean', description: 'Show ASCII graph in log' },
+        author: { type: 'string', description: 'Filter log by author' },
+        since: { type: 'string', description: 'Log since date (e.g. "2024-01-01", "2 weeks ago")' },
+        until: { type: 'string', description: 'Log until date' },
+        all: { type: 'boolean', description: 'Show all branches in log / fetch all remotes' },
+        // Branch options
+        subAction: { type: 'string', description: 'Sub-action for branch/stash/remote/tag/conflicts: e.g. "list", "create", "delete", "checkout", "create-checkout", "rename", "save", "pop", "apply", "drop", "clear", "show", "add", "remove", "set-url", "accept-ours", "accept-theirs", "force-delete"' },
+        name: { type: 'string', description: 'Branch/tag/remote name' },
+        newName: { type: 'string', description: 'New name for branch rename' },
+        remote: { type: 'string', description: 'Remote name (default: "origin")' },
+        // Diff options
+        staged: { type: 'boolean', description: 'Show staged diff' },
+        stat: { type: 'boolean', description: 'Show diff/show stats only' },
+        nameOnly: { type: 'boolean', description: 'Show only changed file names' },
+        commit1: { type: 'string', description: 'First commit for diff comparison' },
+        commit2: { type: 'string', description: 'Second commit for diff comparison' },
+        // Add/commit/reset options
+        files: { type: 'array', items: { type: 'string' }, description: 'List of files for add/reset/checkout' },
+        message: { type: 'string', description: 'Commit/tag/stash message' },
+        amend: { type: 'boolean', description: 'Amend last commit' },
+        allowEmpty: { type: 'boolean', description: 'Allow empty commit' },
+        // Push/pull options
+        branch: { type: 'string', description: 'Branch name' },
+        force: { type: 'boolean', description: 'Force push' },
+        setUpstream: { type: 'boolean', description: 'Set upstream on push' },
+        rebase: { type: 'boolean', description: 'Pull with rebase' },
+        // Merge options
+        noFf: { type: 'boolean', description: 'No fast-forward merge' },
+        squash: { type: 'boolean', description: 'Squash merge' },
+        abort: { type: 'boolean', description: 'Abort merge/rebase/cherry-pick' },
+        // Stash options
+        index: { type: 'number', description: 'Stash index' },
+        // Clone options
+        url: { type: 'string', description: 'Repository URL for clone' },
+        directory: { type: 'string', description: 'Target directory for clone/init' },
+        depth: { type: 'number', description: 'Shallow clone depth' },
+        bare: { type: 'boolean', description: 'Initialize bare repository' },
+        // Blame options
+        file: { type: 'string', description: 'File path for blame/diff/conflicts' },
+        startLine: { type: 'number', description: 'Start line for blame' },
+        endLine: { type: 'number', description: 'End line for blame' },
+        // Cherry-pick
+        commits: { type: 'array', items: { type: 'string' }, description: 'Commit hashes for cherry-pick' },
+        noCommit: { type: 'boolean', description: 'Cherry-pick without committing' },
+        // Rebase
+        interactive: { type: 'boolean', description: 'Interactive rebase' },
+        continue: { type: 'boolean', description: 'Continue rebase' },
+        onto: { type: 'string', description: 'Rebase onto target' },
+        // Reset
+        mode: { type: 'string', description: 'Reset mode: "soft", "mixed", "hard"' },
+        target: { type: 'string', description: 'Reset target / checkout target' },
+        // Show
+        commit: { type: 'string', description: 'Commit hash for show' },
+        // Fetch
+        prune: { type: 'boolean', description: 'Prune on fetch' },
+        // Checkout
+        createBranch: { type: 'boolean', description: 'Create branch on checkout' },
+        // Conflict resolution
+        resolution: { type: 'string', description: 'Conflict resolution strategy' },
+      },
+      required: ['action'],
     },
   },
 ];
@@ -248,7 +327,7 @@ function safeExec(command, options = {}) {
       timeout: options.timeout || 30000,
       cwd: options.cwd || process.cwd(),
       shell: process.platform === 'win32' ? 'powershell.exe' : '/bin/bash',
-      maxBuffer: 1024 * 1024 * 5, // 5MB
+      maxBuffer: 1024 * 1024 * 50, // 50MB
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     return result.trim();
@@ -260,7 +339,7 @@ function safeExec(command, options = {}) {
 
 async function runShellCommand({ command, cwd, timeout }) {
   try {
-    const result = safeExec(command, { cwd, timeout: timeout || 30000 });
+    const result = safeExec(command, { cwd, timeout: timeout || 120000 });
     return { success: true, output: result || '(no output)' };
   } catch (err) {
     return { success: false, error: err.message };
@@ -271,7 +350,7 @@ async function readFile({ filePath, encoding = 'utf-8' }) {
   try {
     const resolved = path.resolve(filePath);
     const stat = fs.statSync(resolved);
-    if (stat.size > 1024 * 1024) {
+    if (stat.size > 50 * 1024 * 1024) {
       return { success: false, error: `File too large (${(stat.size / 1024 / 1024).toFixed(1)}MB). Use shell command to read parts.` };
     }
     const content = fs.readFileSync(resolved, encoding);
@@ -371,7 +450,7 @@ async function listDirectory({ dirPath = '.', recursive = false }) {
     const resolved = path.resolve(dirPath);
     const entries = fs.readdirSync(resolved, { withFileTypes: true });
     const items = [];
-    for (const entry of entries.slice(0, 200)) {
+    for (const entry of entries) {
       const fullPath = path.join(resolved, entry.name);
       try {
         const stat = fs.statSync(fullPath);
@@ -381,16 +460,34 @@ async function listDirectory({ dirPath = '.', recursive = false }) {
           size: entry.isDirectory() ? '-' : formatSize(stat.size),
           modified: stat.mtime.toISOString().split('T')[0],
         });
-        if (recursive && entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
+        if (recursive && entry.isDirectory()) {
           try {
             const subEntries = fs.readdirSync(fullPath, { withFileTypes: true });
-            for (const sub of subEntries.slice(0, 50)) {
-              items.push({
-                name: `  ${entry.name}/${sub.name}`,
-                type: sub.isDirectory() ? 'directory' : 'file',
-                size: '-',
-                modified: '',
-              });
+            for (const sub of subEntries) {
+              const subFullPath = path.join(fullPath, sub.name);
+              try {
+                const subStat = fs.statSync(subFullPath);
+                items.push({
+                  name: `  ${entry.name}/${sub.name}`,
+                  type: sub.isDirectory() ? 'directory' : 'file',
+                  size: sub.isDirectory() ? '-' : formatSize(subStat.size),
+                  modified: subStat.mtime.toISOString().split('T')[0],
+                });
+                // Go one more level deep in recursive mode
+                if (sub.isDirectory()) {
+                  try {
+                    const deepEntries = fs.readdirSync(subFullPath, { withFileTypes: true });
+                    for (const deep of deepEntries) {
+                      items.push({
+                        name: `    ${entry.name}/${sub.name}/${deep.name}`,
+                        type: deep.isDirectory() ? 'directory' : 'file',
+                        size: '-',
+                        modified: '',
+                      });
+                    }
+                  } catch { /* skip */ }
+                }
+              } catch { /* skip */ }
             }
           } catch { /* skip inaccessible subdirs */ }
         }
@@ -402,18 +499,18 @@ async function listDirectory({ dirPath = '.', recursive = false }) {
   }
 }
 
-async function searchFiles({ directory = '.', pattern, contentSearch, maxResults = 20 }) {
+async function searchFiles({ directory = '.', pattern, contentSearch, maxResults = 100 }) {
   try {
     const resolved = path.resolve(directory);
     const results = [];
 
     function walk(dir, depth = 0) {
-      if (depth > 5 || results.length >= maxResults) return;
+      if (depth > 15 || results.length >= maxResults) return;
       try {
         const entries = fs.readdirSync(dir, { withFileTypes: true });
         for (const entry of entries) {
           if (results.length >= maxResults) break;
-          if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+          if (entry.name === 'node_modules' || entry.name === '.git') continue;
           const fullPath = path.join(dir, entry.name);
           if (entry.isDirectory()) {
             walk(fullPath, depth + 1);
@@ -800,6 +897,35 @@ function formatUptime(seconds) {
   return `${d}d ${h}h ${m}m`;
 }
 
+// ═══ Git Operations Dispatcher ═══
+async function gitOps(args) {
+  const { action, ...rest } = args;
+  if (!action) return { success: false, error: 'Git action required.' };
+
+  // Map common params
+  const params = { ...rest };
+  // Map subAction to the "action" parameter expected by sub-functions
+  if (rest.subAction) params.action = rest.subAction;
+  // Map remote string to correct param name for push/pull
+  if (typeof rest.remote === 'string' && rest.remote !== 'true' && rest.remote !== 'false') {
+    // keep as-is for push/pull, convert for branch.list
+  }
+  if (typeof rest.remote === 'boolean' && action === 'branch') {
+    params.remote = rest.remote;
+  }
+
+  const handler = gitOperations[action];
+  if (!handler) {
+    return { success: false, error: `Unknown git action: ${action}. Available: ${Object.keys(gitOperations).join(', ')}` };
+  }
+
+  try {
+    return handler(params);
+  } catch (err) {
+    return { success: false, error: `Git ${action} failed: ${err.message}` };
+  }
+}
+
 // ═══ Tool Executor (Maps name → function) ═══
 const toolHandlers = {
   run_shell_command: runShellCommand,
@@ -812,9 +938,11 @@ const toolHandlers = {
   web_fetch: webFetch,
   process_manager: processManager,
   code_analysis: codeAnalysis,
+  git_operations: gitOps,
 };
 
 export async function executeTool(name, args) {
+  args = args || {};
   // Run pre-hooks
   const preResult = runPreHooks(name, args);
   if (!preResult.allow) {

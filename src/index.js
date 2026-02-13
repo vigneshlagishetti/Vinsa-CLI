@@ -602,6 +602,323 @@ program
   });
 
 // ═══════════════════════════════════════════════════
+// GIT — Full Git source control
+// ═══════════════════════════════════════════════════
+const gitCmd = program
+  .command('git')
+  .description('Git source control — manage repos directly through Vinsa');
+
+gitCmd
+  .command('status')
+  .description('Show working tree status')
+  .action(async () => {
+    const { gitStatus } = await import('./git.js');
+    const result = gitStatus();
+    if (!result.success) { printError(result.error); return; }
+    console.log(colors.brand.bold('\n  Git Status'));
+    printDivider();
+    console.log(`  Branch: ${colors.accent(result.branch)}${result.tracking ? colors.dim(` → ${result.tracking}`) : ''}`);
+    if (result.ahead || result.behind) console.log(`  ${result.ahead ? colors.success(`↑${result.ahead}`) : ''} ${result.behind ? colors.error(`↓${result.behind}`) : ''}`);
+    if (result.lastCommit) console.log(`  Last: ${colors.dim(result.lastCommit)}`);
+    if (result.staged.length) { console.log(colors.success('\n  Staged:')); result.staged.forEach(f => console.log(colors.success(`    ✔ ${f.status.padEnd(10)} ${f.file}`))); }
+    if (result.unstaged.length) { console.log(colors.error('\n  Unstaged:')); result.unstaged.forEach(f => console.log(colors.error(`    ✖ ${f.status.padEnd(10)} ${f.file}`))); }
+    if (result.untracked.length) { console.log(colors.dim('\n  Untracked:')); result.untracked.forEach(f => console.log(colors.dim(`    ? ${f}`))); }
+    if (result.conflicts.length) { console.log(colors.error.bold('\n  Conflicts:')); result.conflicts.forEach(f => console.log(colors.error(`    ⚡ ${f.file}`))); }
+    if (result.clean) console.log(colors.success('\n  ✔ Working tree clean'));
+    printDivider();
+  });
+
+gitCmd
+  .command('log')
+  .description('Show commit log')
+  .option('-n, --count <n>', 'Number of commits', '20')
+  .option('--graph', 'Show ASCII graph')
+  .option('--oneline', 'One-line format')
+  .option('--all', 'All branches')
+  .option('--author <name>', 'Filter by author')
+  .option('--since <date>', 'Commits since date')
+  .action(async (options) => {
+    const { gitLog } = await import('./git.js');
+    const result = gitLog({ count: parseInt(options.count), graph: options.graph, oneline: options.oneline, all: options.all, author: options.author, since: options.since });
+    if (!result.success) { printError(result.error); return; }
+    console.log(colors.brand.bold('\n  Git Log'));
+    printDivider();
+    if (result.log) { result.log.split('\n').slice(0, 50).forEach(l => console.log(`  ${l}`)); }
+    else if (result.commits) { result.commits.forEach(c => console.log(`  ${colors.accent(c.shortHash)} ${c.message} ${colors.dim(`— ${c.author}, ${c.date}`)}`)); }
+    printDivider();
+  });
+
+gitCmd
+  .command('add')
+  .description('Stage files — vinsa git add <files...> | vinsa git add --all')
+  .argument('[files...]', 'Files to stage')
+  .option('-A, --all', 'Stage all changes')
+  .action(async (files, options) => {
+    const { gitAdd } = await import('./git.js');
+    const result = gitAdd({ files: files.length ? files : undefined, all: options.all || files.length === 0 });
+    if (result.success) printSuccess(result.message);
+    else printError(result.error);
+  });
+
+gitCmd
+  .command('commit')
+  .description('Commit staged changes')
+  .option('-m, --message <msg>', 'Commit message')
+  .option('-a, --all', 'Auto-stage tracked files')
+  .option('--amend', 'Amend last commit')
+  .option('--ai', 'Generate AI commit message (default if no -m)')
+  .action(async (options) => {
+    if (options.message) {
+      const { gitCommit } = await import('./git.js');
+      const result = gitCommit({ message: options.message, all: options.all, amend: options.amend });
+      if (result.success) printSuccess(`Committed: ${result.commitHash} — ${options.message}`);
+      else printError(result.error);
+    } else {
+      // AI commit message
+      const spinner = createSpinner('Generating AI commit message...');
+      spinner.start();
+      try {
+        const { execSync } = await import('child_process');
+        let diff = execSync('git diff --staged', { encoding: 'utf-8', timeout: 10000 }).trim();
+        if (!diff) {
+          diff = execSync('git diff', { encoding: 'utf-8', timeout: 10000 }).trim();
+          if (!diff) { spinner.stop(); printWarning('No changes. Stage files first.'); return; }
+          execSync('git add -A', { encoding: 'utf-8' });
+        }
+        const truncDiff = diff.length > 4000 ? diff.slice(0, 4000) + '\n...(truncated)' : diff;
+        const agent = getAgent();
+        agent.initialize();
+        const msg = await agent.run(`Generate a concise conventional commit message for:\n\`\`\`\n${truncDiff}\n\`\`\`\nRespond with ONLY the commit message. One line, max 72 chars. Format: type(scope): description`, {});
+        spinner.stop();
+        const commitMsg = msg.trim().replace(/^["']|["']$/g, '').split('\n')[0];
+        printInfo(`AI Commit: ${commitMsg}`);
+        const { gitCommit } = await import('./git.js');
+        const result = gitCommit({ message: commitMsg, all: options.all, amend: options.amend });
+        if (result.success) printSuccess(`Committed: ${result.commitHash}`);
+        else printError(result.error);
+      } catch (err) { spinner.stop(); printError(err.message); }
+    }
+  });
+
+gitCmd
+  .command('push')
+  .description('Push to remote')
+  .argument('[remote]', 'Remote name', 'origin')
+  .argument('[branch]', 'Branch name')
+  .option('-f, --force', 'Force push')
+  .option('-u, --set-upstream', 'Set upstream')
+  .option('--tags', 'Push tags')
+  .action(async (remote, branch, options) => {
+    const spinner = createSpinner('Pushing...');
+    spinner.start();
+    const { gitPush } = await import('./git.js');
+    const result = gitPush({ remote, branch, force: options.force, setUpstream: options.setUpstream, tags: options.tags });
+    spinner.stop();
+    if (result.success) printSuccess(result.message);
+    else printError(result.error);
+  });
+
+gitCmd
+  .command('pull')
+  .description('Pull from remote')
+  .argument('[remote]', 'Remote name', 'origin')
+  .argument('[branch]', 'Branch name')
+  .option('--rebase', 'Pull with rebase')
+  .action(async (remote, branch, options) => {
+    const spinner = createSpinner('Pulling...');
+    spinner.start();
+    const { gitPull } = await import('./git.js');
+    const result = gitPull({ remote, branch, rebase: options.rebase });
+    spinner.stop();
+    if (result.success) printSuccess(result.message);
+    else printError(result.error);
+  });
+
+gitCmd
+  .command('branch')
+  .description('Branch management')
+  .argument('[action]', 'list|create|delete|rename|checkout')
+  .argument('[name]', 'Branch name')
+  .argument('[newName]', 'New name (for rename)')
+  .option('-r, --remote', 'Include remote branches')
+  .action(async (action, name, newName, options) => {
+    const { gitBranch } = await import('./git.js');
+    const result = gitBranch({ action: action || 'list', name, newName, remote: options.remote });
+    if (!result.success) { printError(result.error); return; }
+    if (result.branches) {
+      console.log(colors.brand.bold('\n  Git Branches'));
+      printDivider();
+      for (const b of result.branches) {
+        const isCurrent = b.name === result.current;
+        console.log(`  ${isCurrent ? colors.success('* ') : '  '}${isCurrent ? colors.accent(b.name) : b.name} ${colors.dim(b.hash)}`);
+      }
+      printDivider();
+    } else {
+      printSuccess(result.message);
+    }
+  });
+
+gitCmd
+  .command('merge')
+  .description('Merge a branch')
+  .argument('[branch]', 'Branch to merge')
+  .option('--squash', 'Squash merge')
+  .option('--no-ff', 'No fast-forward')
+  .option('--abort', 'Abort current merge')
+  .action(async (branch, options) => {
+    const { gitMerge } = await import('./git.js');
+    const result = gitMerge({ branch, squash: options.squash, noFf: options.noFf, abort: options.abort });
+    if (result.success) printSuccess(result.message);
+    else printError(result.error);
+  });
+
+gitCmd
+  .command('stash')
+  .description('Stash operations')
+  .argument('[action]', 'save|list|pop|apply|drop|clear|show', 'list')
+  .argument('[args...]', 'Stash message or index')
+  .action(async (action, args) => {
+    const { gitStash } = await import('./git.js');
+    const params = { action };
+    if ((action === 'save' || action === 'push') && args.length) params.message = args.join(' ');
+    if (['pop', 'apply', 'drop', 'show'].includes(action) && args[0]) params.index = parseInt(args[0]);
+    const result = gitStash(params);
+    if (!result.success) { printError(result.error); return; }
+    if (result.stashes) {
+      console.log(colors.brand.bold('\n  Git Stash'));
+      printDivider();
+      if (result.stashes.length === 0) console.log(colors.dim('  No stashes.'));
+      else result.stashes.forEach(s => console.log(`  ${colors.accent(s.ref)} ${s.description}`));
+      printDivider();
+    } else if (result.diff) {
+      printDivider(); console.log(result.diff.slice(0, 3000)); printDivider();
+    } else {
+      printSuccess(result.message);
+    }
+  });
+
+gitCmd
+  .command('diff')
+  .description('Show changes')
+  .option('--staged', 'Show staged changes')
+  .option('--stat', 'Show stats only')
+  .option('--name-only', 'Show file names only')
+  .argument('[file]', 'Specific file')
+  .action(async (file, options) => {
+    const { gitDiff } = await import('./git.js');
+    const result = gitDiff({ staged: options.staged, stat: options.stat, nameOnly: options.nameOnly, file });
+    if (!result.success) { printError(result.error); return; }
+    if (!result.diff) { printInfo('No changes.'); return; }
+    const lines = result.diff.split('\n');
+    printDivider();
+    for (const line of lines.slice(0, 80)) {
+      if (line.startsWith('+') && !line.startsWith('+++')) console.log(colors.success(`  ${line}`));
+      else if (line.startsWith('-') && !line.startsWith('---')) console.log(colors.error(`  ${line}`));
+      else if (line.startsWith('@@')) console.log(colors.accent(`  ${line}`));
+      else console.log(colors.dim(`  ${line}`));
+    }
+    if (lines.length > 80) console.log(colors.dim(`  ... ${lines.length - 80} more lines`));
+    printDivider();
+  });
+
+gitCmd
+  .command('tag')
+  .description('Tag management')
+  .argument('[action]', 'list|create|delete', 'list')
+  .argument('[name]', 'Tag name')
+  .argument('[message...]', 'Tag message')
+  .action(async (action, name, message) => {
+    const { gitTag } = await import('./git.js');
+    const result = gitTag({ action, name, message: message?.join(' ') || undefined });
+    if (!result.success) { printError(result.error); return; }
+    if (result.tags) {
+      console.log(colors.brand.bold('\n  Git Tags'));
+      printDivider();
+      if (result.tags.length === 0) console.log(colors.dim('  No tags.'));
+      else result.tags.forEach(t => console.log(`  ${colors.accent(t.name)} ${colors.dim(t.message)}`));
+      printDivider();
+    } else {
+      printSuccess(result.message);
+    }
+  });
+
+gitCmd
+  .command('remote')
+  .description('Remote management')
+  .argument('[action]', 'list|add|remove|set-url', 'list')
+  .argument('[name]', 'Remote name')
+  .argument('[url]', 'Remote URL')
+  .action(async (action, name, url) => {
+    const { gitRemote } = await import('./git.js');
+    const result = gitRemote({ action, name, url });
+    if (!result.success) { printError(result.error); return; }
+    if (result.remotes) {
+      console.log(colors.brand.bold('\n  Git Remotes'));
+      printDivider();
+      if (result.remotes.length === 0) console.log(colors.dim('  No remotes.'));
+      else result.remotes.forEach(r => console.log(`  ${colors.accent(r.name.padEnd(15))} ${r.fetchUrl}`));
+      printDivider();
+    } else {
+      printSuccess(result.message);
+    }
+  });
+
+gitCmd
+  .command('blame')
+  .description('Show who changed each line')
+  .argument('<file>', 'File path')
+  .option('-L, --lines <range>', 'Line range (start,end)')
+  .action(async (file, options) => {
+    const { gitBlame } = await import('./git.js');
+    let startLine, endLine;
+    if (options.lines) { const p = options.lines.split(','); startLine = parseInt(p[0]); endLine = parseInt(p[1]); }
+    const result = gitBlame({ file, startLine, endLine });
+    if (!result.success) { printError(result.error); return; }
+    printDivider();
+    result.blame.split('\n').slice(0, 50).forEach(l => console.log(colors.dim(`  ${l}`)));
+    printDivider();
+  });
+
+gitCmd
+  .command('clone')
+  .description('Clone a repository')
+  .argument('<url>', 'Repository URL')
+  .argument('[directory]', 'Target directory')
+  .option('-b, --branch <branch>', 'Clone specific branch')
+  .option('--depth <n>', 'Shallow clone depth')
+  .action(async (url, directory, options) => {
+    const spinner = createSpinner('Cloning...');
+    spinner.start();
+    const { gitClone } = await import('./git.js');
+    const result = gitClone({ url, directory, branch: options.branch, depth: options.depth ? parseInt(options.depth) : undefined });
+    spinner.stop();
+    if (result.success) printSuccess(result.message);
+    else printError(result.error);
+  });
+
+gitCmd
+  .command('info')
+  .description('Show comprehensive repository information')
+  .action(async () => {
+    const { gitRepoInfo } = await import('./git.js');
+    const result = gitRepoInfo();
+    if (!result.success) { printError(result.error); return; }
+    console.log(colors.brand.bold('\n  Repository Info'));
+    printDivider();
+    console.log(`  Root:         ${colors.accent(result.root)}`);
+    console.log(`  Branch:       ${colors.accent(result.branch)}`);
+    if (result.remoteUrl) console.log(`  Remote:       ${colors.dim(result.remoteUrl)}`);
+    console.log(`  Commits:      ${result.commitCount}`);
+    console.log(`  Branches:     ${result.branchCount}`);
+    console.log(`  Tags:         ${result.tagCount}${result.lastTag ? ` (latest: ${colors.accent(result.lastTag)})` : ''}`);
+    if (result.contributors.length) {
+      console.log(colors.accent('\n  Contributors:'));
+      result.contributors.slice(0, 10).forEach(c => console.log(`    ${colors.dim(String(c.commits).padStart(5))} ${c.name} ${colors.dim(`<${c.email}>`)}`));
+    }
+    printDivider();
+  });
+
+// ═══════════════════════════════════════════════════
 // DEFAULT — No subcommand = launch interactive shell
 // (with stdin pipe detection)
 // ═══════════════════════════════════════════════════
@@ -670,10 +987,17 @@ async function askOnce(prompt, format = 'text') {
     if (isJson) {
       process.stdout.write(JSON.stringify({ success: false, error: err.message }) + '\n');
     } else {
-      printError(err.message);
-      if (err.message.includes('API key')) {
-        printInfo('Get your FREE key at: https://console.groq.com/keys');
-        printInfo('Then run: vinsa config set-key YOUR_API_KEY');
+      if (err.message.includes('DEV_KEY_EXHAUSTED')) {
+        printWarning('The built-in API key has hit its limit across all models.');
+        printInfo('To continue, provide your own free Groq API key:');
+        printInfo('  1. Get a key at: https://console.groq.com/keys');
+        printInfo('  2. Run: vinsa config set-key YOUR_API_KEY');
+      } else {
+        printError(err.message);
+        if (err.message.includes('API key')) {
+          printInfo('Get your FREE key at: https://console.groq.com/keys');
+          printInfo('Then run: vinsa config set-key YOUR_API_KEY');
+        }
       }
     }
     process.exit(1);

@@ -13,7 +13,7 @@
 import Groq from 'groq-sdk';
 import fs from 'fs';
 import path from 'path';
-import { getApiKey, getModel, getMaxRetries, getPlanMode } from './config.js';
+import { getApiKey, getModel, getMaxRetries, getPlanMode, isUsingDevKey } from './config.js';
 import { toolDefinitions, executeTool } from './tools.js';
 import { loadPlugins, executePlugin, isPluginTool, getPluginTools } from './plugins.js';
 import { printToolCall, printToolResult, printRetry, printError, printInfo, printWarning, colors } from './ui.js';
@@ -23,7 +23,7 @@ import { printToolCall, printToolResult, printRetry, printError, printInfo, prin
 // ════════════════════════════════════════════════════════════
 const MODEL_POOL = [
   { id: 'llama-3.3-70b-versatile',    label: 'Llama 3.3 70B',     cooldown: 60 },
-  { id: 'llama-3.1-70b-versatile',    label: 'Llama 3.1 70B',     cooldown: 60 },
+  { id: 'meta-llama/llama-4-maverick-17b-128e-instruct', label: 'Llama 4 Maverick 17B', cooldown: 60 },
   { id: 'meta-llama/llama-4-scout-17b-16e-instruct', label: 'Llama 4 Scout 17B', cooldown: 60 },
   { id: 'qwen-qwq-32b',              label: 'Qwen QwQ 32B',      cooldown: 60 },
   { id: 'mistral-saba-24b',          label: 'Mistral Saba 24B',   cooldown: 60 },
@@ -31,7 +31,6 @@ const MODEL_POOL = [
   { id: 'llama-3.1-8b-instant',      label: 'Llama 3.1 8B',      cooldown: 45 },
   { id: 'gemma2-9b-it',              label: 'Gemma 2 9B',        cooldown: 45 },
   { id: 'llama-3.2-3b-preview',      label: 'Llama 3.2 3B',      cooldown: 30 },
-  { id: 'llama-3.2-1b-preview',      label: 'Llama 3.2 1B',      cooldown: 30 },
 ];
 
 const SYSTEM_PROMPT = `You are **Vinsa**, a powerful, free, open-source AI CLI agent created by **Lagishetti Vignesh**, running inside the user's terminal.
@@ -45,14 +44,17 @@ const SYSTEM_PROMPT = `You are **Vinsa**, a powerful, free, open-source AI CLI a
 - When you do use a tool, use the EXACT right one for the job. Don't run shell commands when a dedicated tool exists.
 
 ## Your Capabilities (only mention when asked)
-You have access to powerful built-in tools:
-- **Shell Commands**: Run any command (PowerShell on Windows, bash on Linux/macOS)
-- **File Operations**: Read, write, search files and directories
+You have **FULL ACCESS** to the user's entire computer. You can read/write any file, run any command, and access any directory on the system. Your tools include:
+- **Shell Commands**: Run ANY command anywhere on the system (PowerShell on Windows, bash on Linux/macOS) — no restrictions
+- **File Operations**: Read, write, search ANY file or directory on the entire computer using absolute paths (e.g., C:\\Users\\..., /home/..., /etc/...)
 - **Network Diagnostics**: Ping, DNS lookup, port scan, traceroute, WiFi scan
 - **System Information**: CPU, RAM, disk, GPU, battery, processes, OS info
 - **Web Fetch**: Make HTTP requests to any URL / API
-- **Code Analysis**: Analyze project structure, dependencies, TODOs, stats
-- **Process Manager**: List, find, kill processes
+- **Code Analysis**: Analyze any project structure, dependencies, TODOs, stats
+- **Process Manager**: List, find, kill any process
+- **Git Source Control**: Full Git integration — status, log, branch, add, commit, push, pull, merge, stash, clone, init, remote, tag, diff, blame, cherry-pick, rebase, reset, checkout, show, fetch, conflict resolution, repo info. You ARE a complete Git client.
+
+**Important**: When the user asks about files, folders, or paths anywhere on their computer, use absolute paths. You are NOT restricted to any particular directory. You can navigate the ENTIRE filesystem.
 
 ## Conversational Behavior
 - **Greetings**: "hi" → "Hi! How are you?". "thanks" → "You're welcome!". Keep it short and human.
@@ -319,7 +321,7 @@ export class VinsaAgent {
       } catch (err) {
         attempt++;
         const isRateLimit = err.message.includes('429') || err.message.includes('rate_limit');
-        const isModelNotFound = err.message.includes('404') || err.message.includes('not found') || err.message.includes('does not exist');
+        const isModelNotFound = err.message.includes('404') || err.message.includes('not found') || err.message.includes('does not exist') || err.message.includes('decommissioned') || err.message.includes('model_not_active');
 
         if (isRateLimit || isModelNotFound) {
           // Mark this model as rate-limited / unavailable — instant switch, no delay
@@ -363,6 +365,9 @@ export class VinsaAgent {
       }
     }
 
+    if (isUsingDevKey()) {
+      throw new Error('DEV_KEY_EXHAUSTED: All models exhausted on the built-in key. Please provide your own Groq API key to continue.');
+    }
     throw new Error('All models exhausted and max retries reached. Please try again later.');
   }
 
@@ -418,6 +423,7 @@ export class VinsaAgent {
         const functionName = tc.function.name;
         let functionArgs = {};
         try { functionArgs = JSON.parse(tc.function.arguments || '{}'); } catch { functionArgs = {}; }
+        if (!functionArgs || typeof functionArgs !== 'object') functionArgs = {};
         toolCallCount++;
 
         if (onToolCall) onToolCall(functionName, functionArgs);
@@ -457,6 +463,16 @@ export class VinsaAgent {
       onModelSwitch: () => {},
     } : {};
     return this.run(prompt, callbacks);
+  }
+
+  /**
+   * Reinitialize the agent with a new API key (e.g., after dev key exhaustion)
+   */
+  reinitializeWithKey(apiKey) {
+    this.client = new Groq({ apiKey });
+    this.rotator = new ModelRotator(getModel());
+    this.initialized = true;
+    this._rebuildTools();
   }
 
   clearHistory() {

@@ -35,9 +35,17 @@ import {
   getHooks, addHook, removeHook, clearHooks,
   getBranches, saveBranch, getBranch, deleteBranch, getActiveBranch, setActiveBranch,
   getConfirmWrites, setConfirmWrites, getHistory,
+  isUsingDevKey,
 } from './config.js';
 import { undoLastChange, getFileChangeStack, setInteractiveConfirm } from './tools.js';
 import { getPluginTools, getPluginsDir, listPluginFiles, loadPlugins } from './plugins.js';
+import {
+  gitStatus, gitLog, gitBranch as gitBranchOp, gitDiff as gitDiffOp, gitAdd,
+  gitCommit as gitCommitOp, gitPush, gitPull, gitMerge, gitStash,
+  gitClone, gitInit as gitInitOp, gitRemote, gitTag, gitBlame,
+  gitCherryPick, gitRebase, gitReset, gitCheckout, gitShow,
+  gitFetch, gitConflicts, gitRepoInfo,
+} from './git.js';
 
 // Track last AI response for /copy
 let lastResponse = '';
@@ -73,6 +81,19 @@ const SLASH_COMMANDS = {
   '/confirm':  'Toggle interactive diff preview for writes',
   '/plugins':  'List loaded plugins',
   '/multi':    'Multi-agent mode — /multi <task>',
+  '/git':      'Git source control — /git <command> [args]',
+  '/status':   'Git status (shortcut)',
+  '/log':      'Git log — /log [count] [--graph] [--all]',
+  '/stash':    'Git stash — /stash [save|list|pop|apply|drop|clear]',
+  '/push':     'Git push — /push [remote] [branch]',
+  '/pull':     'Git pull — /pull [--rebase]',
+  '/merge':    'Git merge — /merge <branch> [--squash] [--no-ff]',
+  '/tag':      'Git tag — /tag [create|delete] [name]',
+  '/remote':   'Git remote — /remote [add|remove] [name] [url]',
+  '/blame':    'Git blame — /blame <file> [startLine] [endLine]',
+  '/fetch':    'Git fetch — /fetch [--all] [--prune]',
+  '/cherry-pick': 'Cherry-pick commits — /cherry-pick <hash>...',
+  '/repoinfo': 'Show comprehensive repo information',
   '/exit':     'Exit Vinsa shell',
   '/quit':     'Exit Vinsa shell',
 };
@@ -96,9 +117,12 @@ function question(rl, prompt) {
 }
 
 // ─── First-run setup: auto-detect missing API key & prompt ───
+// With built-in dev key, this is only needed if the dev key is also missing.
 async function ensureApiKey(rl) {
   if (getApiKey()) return true;
 
+  // This should rarely trigger since the dev key is embedded,
+  // but handles the case if someone removes it.
   console.log('');
   console.log(colors.brand.bold('  🔑 First-Time Setup'));
   printDivider();
@@ -136,6 +160,35 @@ async function ensureApiKey(rl) {
 
   printError('Setup cancelled. Run "vinsa config set-key YOUR_KEY" later.');
   return false;
+}
+
+/**
+ * Prompt user for their own API key when the built-in dev key is exhausted.
+ * Returns true if a valid key was provided and saved.
+ */
+async function promptUserKeyOnExhaustion(rl) {
+  console.log('');
+  console.log(colors.brand.bold('  ⚡ Rate Limit Reached'));
+  printDivider();
+  console.log(colors.accent('  The built-in API key has hit its limit across all models.'));
+  console.log(colors.accent('  To continue, please provide your own free Groq API key.'));
+  console.log('');
+  console.log('  1. Go to: ' + colors.bold('https://console.groq.com/keys'));
+  console.log('  2. Sign up (free — no credit card)');
+  console.log('  3. Create an API key and paste it below');
+  console.log('');
+
+  const key = (await question(rl, colors.accent('  Paste your API key (or press Enter to skip): '))).trim();
+
+  if (!key) {
+    printWarning('No key entered. Wait ~60 seconds for the built-in key to recover.');
+    return false;
+  }
+
+  setApiKey(key);
+  printSuccess('Your API key saved! Retrying with your key...');
+  console.log('');
+  return true;
 }
 
 // ════════════════════════════════════════════════════════════
@@ -321,6 +374,7 @@ export async function startChat({ continueSession = false } = {}) {
       });
 
       spinner.stop();
+      process.stdout.write('\u001B[?25h'); // Ensure cursor visible
       printResponse(response);
       lastResponse = response; // Track for /copy
 
@@ -330,14 +384,49 @@ export async function startChat({ continueSession = false } = {}) {
 
     } catch (err) {
       spinner.stop();
+      // Restore cursor visibility (ora can hide it on Windows)
+      process.stdout.write('\u001B[?25h');
 
-      if (err.message.includes('API key') || err.message.includes('401') || err.message.includes('invalid_api_key')) {
+      if (err.message.includes('DEV_KEY_EXHAUSTED')) {
+        // Built-in key exhausted across all models — ask user for their own key
+        const gotKey = await promptUserKeyOnExhaustion(rl);
+        if (gotKey) {
+          // Reinitialize agent with the user's key and auto-retry
+          agent.reinitializeWithKey(getApiKey());
+          printInfo('Retrying your last question...');
+          // Replay the last user message
+          const retrySpinner = createSpinner('Vinsa is thinking...');
+          retrySpinner.start();
+          try {
+            // Remove the last user message agent stored (it will be re-added by run())
+            const hist = agent.getConversationHistory();
+            if (hist.length > 0 && hist[hist.length - 1].role === 'user') {
+              hist.pop();
+              agent.setConversationHistory(hist);
+            }
+            const retryResponse = await agent.run(finalInput, {
+              onToolCall: (name, args) => { retrySpinner.stop(); printToolCall(name, args); retrySpinner.start(); },
+              onToolResult: (result) => { retrySpinner.stop(); printToolResult(result); retrySpinner.start(); },
+              onRetry: (attempt, max, reason) => { retrySpinner.stop(); printRetry(attempt, max, reason); retrySpinner.start(); },
+              onModelSwitch: (from, to, msg) => { retrySpinner.stop(); printInfo(`  ↻ ${msg}`); retrySpinner.start(); },
+            });
+            retrySpinner.stop();
+            printResponse(retryResponse);
+            lastResponse = retryResponse;
+            addToHistory({ role: 'user', content: trimmed.slice(0, 200) });
+            addToHistory({ role: 'assistant', content: (retryResponse || '').slice(0, 200) });
+          } catch (retryErr) {
+            retrySpinner.stop();
+            printError(retryErr.message);
+          }
+        }
+      } else if (err.message.includes('API key') || err.message.includes('401') || err.message.includes('invalid_api_key')) {
         printError('API key is invalid or expired.');
         printInfo('Let\'s fix it — paste a new key:');
         const newKey = (await question(rl, colors.accent('  New API key: '))).trim();
         if (newKey) {
           setApiKey(newKey);
-          agent.initialize(); // re-init with new key
+          agent.reinitializeWithKey(newKey);
           printSuccess('Key updated! Try your question again.');
         }
       } else if (err.message.includes('All models exhausted')) {
@@ -1237,6 +1326,532 @@ async function handleSlashCommand(cmd, agent, mcpManager, rl) {
       } catch (err) {
         spinner.stop();
         printError(`Multi-agent failed: ${err.message}`);
+      }
+      break;
+    }
+
+    // ═══════════════════════════════════════════════
+    // GIT SOURCE CONTROL — /git, /status, /log, /stash, /push, /pull, /merge, /tag, /remote, /blame, /fetch, /cherry-pick, /repoinfo
+    // ═══════════════════════════════════════════════
+
+    case '/status': {
+      const result = gitStatus();
+      if (!result.success) { printError(result.error); break; }
+      console.log('');
+      console.log(colors.brand.bold('  Git Status'));
+      printDivider();
+      console.log(`  Branch: ${colors.accent(result.branch)}${result.tracking ? colors.dim(` → ${result.tracking}`) : ''}`);
+      if (result.ahead || result.behind) {
+        console.log(`  ${result.ahead ? colors.success(`↑${result.ahead} ahead`) : ''} ${result.behind ? colors.error(`↓${result.behind} behind`) : ''}`);
+      }
+      if (result.lastCommit) console.log(`  Last: ${colors.dim(result.lastCommit)}`);
+      console.log('');
+      if (result.staged.length > 0) {
+        console.log(colors.success('  Staged:'));
+        result.staged.forEach(f => console.log(colors.success(`    ✔ ${f.status.padEnd(10)} ${f.file}`)));
+      }
+      if (result.unstaged.length > 0) {
+        console.log(colors.error('  Unstaged:'));
+        result.unstaged.forEach(f => console.log(colors.error(`    ✖ ${f.status.padEnd(10)} ${f.file}`)));
+      }
+      if (result.untracked.length > 0) {
+        console.log(colors.dim('  Untracked:'));
+        result.untracked.forEach(f => console.log(colors.dim(`    ? ${f}`)));
+      }
+      if (result.conflicts.length > 0) {
+        console.log(colors.error.bold('  Conflicts:'));
+        result.conflicts.forEach(f => console.log(colors.error(`    ⚡ ${f.file}`)));
+      }
+      if (result.clean) console.log(colors.success('  ✔ Working tree clean'));
+      printDivider();
+      break;
+    }
+
+    case '/log': {
+      const logArgs = {};
+      if (arg) {
+        const logParts = arg.split(/\s+/);
+        for (const p of logParts) {
+          if (p === '--graph') logArgs.graph = true;
+          else if (p === '--all') logArgs.all = true;
+          else if (p === '--oneline') logArgs.oneline = true;
+          else if (/^\d+$/.test(p)) logArgs.count = parseInt(p);
+          else if (p.startsWith('--author=')) logArgs.author = p.slice(9);
+          else if (p.startsWith('--since=')) logArgs.since = p.slice(8);
+        }
+      }
+      const result = gitLog(logArgs);
+      if (!result.success) { printError(result.error); break; }
+      console.log('');
+      console.log(colors.brand.bold('  Git Log'));
+      printDivider();
+      if (result.log) {
+        // Graph/oneline mode
+        for (const line of result.log.split('\n').slice(0, 50)) {
+          console.log(`  ${line}`);
+        }
+      } else if (result.commits) {
+        for (const c of result.commits) {
+          console.log(`  ${colors.accent(c.shortHash)} ${c.message} ${colors.dim(`— ${c.author}, ${c.date}`)}`);
+        }
+      }
+      printDivider();
+      break;
+    }
+
+    case '/stash': {
+      const stashParts = arg ? arg.split(/\s+/) : ['list'];
+      const stashAction = stashParts[0];
+      const stashMsg = stashParts.slice(1).join(' ');
+      const stashArgs = { action: stashAction };
+      if (stashMsg && (stashAction === 'save' || stashAction === 'push')) stashArgs.message = stashMsg;
+      if (/^\d+$/.test(stashParts[1])) stashArgs.index = parseInt(stashParts[1]);
+      const result = gitStash(stashArgs);
+      if (!result.success) { printError(result.error); break; }
+      if (result.stashes) {
+        console.log('');
+        console.log(colors.brand.bold('  Git Stash'));
+        printDivider();
+        if (result.stashes.length === 0) {
+          console.log(colors.dim('  No stashes.'));
+        } else {
+          result.stashes.forEach(s => console.log(`  ${colors.accent(s.ref)} ${s.description}`));
+        }
+        printDivider();
+      } else if (result.diff) {
+        console.log('');
+        printDivider();
+        console.log(result.diff.slice(0, 3000));
+        printDivider();
+      } else {
+        printSuccess(result.message);
+      }
+      break;
+    }
+
+    case '/push': {
+      const pushParts = arg ? arg.split(/\s+/) : [];
+      const pushRemote = pushParts[0] || 'origin';
+      const pushBranch = pushParts[1];
+      const pushForce = pushParts.includes('--force') || pushParts.includes('-f');
+      const pushUpstream = pushParts.includes('-u') || pushParts.includes('--set-upstream');
+      const spinner = createSpinner('Pushing...');
+      spinner.start();
+      const result = gitPush({ remote: pushRemote, branch: pushBranch, force: pushForce, setUpstream: pushUpstream });
+      spinner.stop();
+      if (result.success) printSuccess(result.message);
+      else printError(result.error);
+      break;
+    }
+
+    case '/pull': {
+      const pullParts = arg ? arg.split(/\s+/) : [];
+      const pullRebase = pullParts.includes('--rebase');
+      const pullRemote = pullParts.find(p => !p.startsWith('-')) || 'origin';
+      const spinner = createSpinner('Pulling...');
+      spinner.start();
+      const result = gitPull({ remote: pullRemote, rebase: pullRebase });
+      spinner.stop();
+      if (result.success) printSuccess(result.message);
+      else printError(result.error);
+      break;
+    }
+
+    case '/merge': {
+      if (!arg) { printWarning('Usage: /merge <branch> [--squash] [--no-ff] [--abort]'); break; }
+      const mergeParts = arg.split(/\s+/);
+      const mergeAbort = mergeParts.includes('--abort');
+      const mergeSquash = mergeParts.includes('--squash');
+      const mergeNoFf = mergeParts.includes('--no-ff');
+      const mergeBranch = mergeParts.find(p => !p.startsWith('-'));
+      const result = gitMerge({ branch: mergeBranch, squash: mergeSquash, noFf: mergeNoFf, abort: mergeAbort });
+      if (result.success) printSuccess(result.message);
+      else printError(result.error);
+      break;
+    }
+
+    case '/tag': {
+      const tagParts = arg ? arg.split(/\s+/) : [];
+      if (tagParts.length === 0 || tagParts[0] === 'list') {
+        const result = gitTag({ action: 'list' });
+        if (!result.success) { printError(result.error); break; }
+        console.log('');
+        console.log(colors.brand.bold('  Git Tags'));
+        printDivider();
+        if (result.tags.length === 0) {
+          console.log(colors.dim('  No tags.'));
+        } else {
+          result.tags.forEach(t => console.log(`  ${colors.accent(t.name)} ${colors.dim(t.message)}`));
+        }
+        printDivider();
+      } else if (tagParts[0] === 'create') {
+        const tagName = tagParts[1];
+        const tagMsg = tagParts.slice(2).join(' ');
+        if (!tagName) { printWarning('Usage: /tag create <name> [message]'); break; }
+        const result = gitTag({ action: 'create', name: tagName, message: tagMsg || undefined });
+        if (result.success) printSuccess(result.message);
+        else printError(result.error);
+      } else if (tagParts[0] === 'delete') {
+        const tagName = tagParts[1];
+        if (!tagName) { printWarning('Usage: /tag delete <name>'); break; }
+        const result = gitTag({ action: 'delete', name: tagName });
+        if (result.success) printSuccess(result.message);
+        else printError(result.error);
+      } else {
+        // Treat as create: /tag v1.0.0 message
+        const result = gitTag({ action: 'create', name: tagParts[0], message: tagParts.slice(1).join(' ') || undefined });
+        if (result.success) printSuccess(result.message);
+        else printError(result.error);
+      }
+      break;
+    }
+
+    case '/remote': {
+      const remoteParts = arg ? arg.split(/\s+/) : ['list'];
+      const remoteAction = remoteParts[0];
+      if (remoteAction === 'list' || !remoteAction) {
+        const result = gitRemote({ action: 'list' });
+        if (!result.success) { printError(result.error); break; }
+        console.log('');
+        console.log(colors.brand.bold('  Git Remotes'));
+        printDivider();
+        if (result.remotes.length === 0) {
+          console.log(colors.dim('  No remotes.'));
+        } else {
+          result.remotes.forEach(r => console.log(`  ${colors.accent(r.name.padEnd(15))} ${r.fetchUrl}`));
+        }
+        printDivider();
+      } else if (remoteAction === 'add') {
+        const result = gitRemote({ action: 'add', name: remoteParts[1], url: remoteParts[2] });
+        if (result.success) printSuccess(result.message);
+        else printError(result.error);
+      } else if (remoteAction === 'remove') {
+        const result = gitRemote({ action: 'remove', name: remoteParts[1] });
+        if (result.success) printSuccess(result.message);
+        else printError(result.error);
+      } else {
+        printWarning('Usage: /remote [list|add <name> <url>|remove <name>]');
+      }
+      break;
+    }
+
+    case '/blame': {
+      if (!arg) { printWarning('Usage: /blame <file> [startLine] [endLine]'); break; }
+      const blameParts = arg.split(/\s+/);
+      const blameFile = blameParts[0];
+      const blameSL = blameParts[1] ? parseInt(blameParts[1]) : undefined;
+      const blameEL = blameParts[2] ? parseInt(blameParts[2]) : undefined;
+      const result = gitBlame({ file: blameFile, startLine: blameSL, endLine: blameEL });
+      if (!result.success) { printError(result.error); break; }
+      console.log('');
+      console.log(colors.brand.bold(`  Git Blame: ${blameFile}`));
+      printDivider();
+      const blameLines = result.blame.split('\n').slice(0, 50);
+      for (const line of blameLines) {
+        console.log(`  ${colors.dim(line)}`);
+      }
+      if (result.blame.split('\n').length > 50) {
+        console.log(colors.dim(`  ... ${result.blame.split('\n').length - 50} more lines`));
+      }
+      printDivider();
+      break;
+    }
+
+    case '/fetch': {
+      const fetchParts = arg ? arg.split(/\s+/) : [];
+      const fetchAll = fetchParts.includes('--all');
+      const fetchPrune = fetchParts.includes('--prune');
+      const spinner = createSpinner('Fetching...');
+      spinner.start();
+      const result = gitFetch({ all: fetchAll, prune: fetchPrune });
+      spinner.stop();
+      if (result.success) printSuccess(result.message);
+      else printError(result.error);
+      break;
+    }
+
+    case '/cherry-pick': {
+      if (!arg) { printWarning('Usage: /cherry-pick <hash> [hash2] ... [--abort]'); break; }
+      const cpParts = arg.split(/\s+/);
+      if (cpParts.includes('--abort')) {
+        const result = gitCherryPick({ abort: true });
+        if (result.success) printSuccess(result.message);
+        else printError(result.error);
+      } else {
+        const result = gitCherryPick({ commits: cpParts });
+        if (result.success) printSuccess(result.message);
+        else printError(result.error);
+      }
+      break;
+    }
+
+    case '/repoinfo': {
+      const result = gitRepoInfo();
+      if (!result.success) { printError(result.error); break; }
+      console.log('');
+      console.log(colors.brand.bold('  Repository Info'));
+      printDivider();
+      console.log(`  Root:         ${colors.accent(result.root)}`);
+      console.log(`  Branch:       ${colors.accent(result.branch)}`);
+      if (result.remoteUrl) console.log(`  Remote:       ${colors.dim(result.remoteUrl)}`);
+      console.log(`  Commits:      ${result.commitCount}`);
+      console.log(`  Branches:     ${result.branchCount}`);
+      console.log(`  Tags:         ${result.tagCount}${result.lastTag ? ` (latest: ${colors.accent(result.lastTag)})` : ''}`);
+      if (result.contributors.length > 0) {
+        console.log('');
+        console.log(colors.accent('  Contributors:'));
+        result.contributors.slice(0, 10).forEach(c => {
+          console.log(`    ${colors.dim(String(c.commits).padStart(5))} ${c.name} ${colors.dim(`<${c.email}>`)}`);
+        });
+      }
+      printDivider();
+      break;
+    }
+
+    case '/git': {
+      // Universal /git command dispatcher
+      if (!arg) {
+        console.log('');
+        console.log(colors.brand.bold('  Git Source Control'));
+        printDivider();
+        console.log(colors.accent('  Shortcuts:'));
+        console.log('    /status              Git status');
+        console.log('    /log [n]             Commit history');
+        console.log('    /diff                Show changes');
+        console.log('    /commit              AI-powered commit');
+        console.log('    /push [remote] [br]  Push to remote');
+        console.log('    /pull [--rebase]     Pull from remote');
+        console.log('    /merge <branch>      Merge branch');
+        console.log('    /stash [cmd]         Stash operations');
+        console.log('    /tag [cmd]           Tag management');
+        console.log('    /remote [cmd]        Remote management');
+        console.log('    /blame <file>        File blame');
+        console.log('    /fetch [--all]       Fetch from remote');
+        console.log('    /cherry-pick <hash>  Cherry-pick commit');
+        console.log('    /repoinfo            Repository overview');
+        console.log('');
+        console.log(colors.accent('  Full commands via /git:'));
+        console.log('    /git status');
+        console.log('    /git add <file|--all>');
+        console.log('    /git checkout <branch|file>');
+        console.log('    /git branch [create|delete|rename] <name>');
+        console.log('    /git reset [--soft|--hard] [target]');
+        console.log('    /git show [commit]');
+        console.log('    /git clone <url> [dir]');
+        console.log('    /git init [dir]');
+        console.log('    /git rebase <branch> [--abort|--continue]');
+        console.log('    /git conflicts [list|accept-ours|accept-theirs] [file]');
+        printDivider();
+        break;
+      }
+      const gitParts = arg.split(/\s+/);
+      const gitCmd = gitParts[0];
+      const gitArg = gitParts.slice(1).join(' ');
+
+      // Dispatch to sub-commands
+      switch (gitCmd) {
+        case 'status': {
+          // Reuse /status handler
+          await handleSlashCommand('/status', '', rl, agent);
+          break;
+        }
+        case 'log': {
+          await handleSlashCommand('/log', gitArg, rl, agent);
+          break;
+        }
+        case 'diff': {
+          await handleSlashCommand('/diff', gitArg, rl, agent);
+          break;
+        }
+        case 'commit': {
+          await handleSlashCommand('/commit', gitArg, rl, agent);
+          break;
+        }
+        case 'push': {
+          await handleSlashCommand('/push', gitArg, rl, agent);
+          break;
+        }
+        case 'pull': {
+          await handleSlashCommand('/pull', gitArg, rl, agent);
+          break;
+        }
+        case 'merge': {
+          await handleSlashCommand('/merge', gitArg, rl, agent);
+          break;
+        }
+        case 'stash': {
+          await handleSlashCommand('/stash', gitArg, rl, agent);
+          break;
+        }
+        case 'tag': {
+          await handleSlashCommand('/tag', gitArg, rl, agent);
+          break;
+        }
+        case 'remote': {
+          await handleSlashCommand('/remote', gitArg, rl, agent);
+          break;
+        }
+        case 'blame': {
+          await handleSlashCommand('/blame', gitArg, rl, agent);
+          break;
+        }
+        case 'fetch': {
+          await handleSlashCommand('/fetch', gitArg, rl, agent);
+          break;
+        }
+        case 'cherry-pick': {
+          await handleSlashCommand('/cherry-pick', gitArg, rl, agent);
+          break;
+        }
+        case 'add': {
+          if (!gitArg && !gitParts.includes('--all') && !gitParts.includes('-A')) {
+            printWarning('Usage: /git add <file> [file2] ... | /git add --all');
+            break;
+          }
+          const addAll = gitParts.includes('--all') || gitParts.includes('-A');
+          const addFiles = gitParts.slice(1).filter(p => !p.startsWith('-'));
+          const result = gitAdd({ files: addFiles.length > 0 ? addFiles : undefined, all: addAll });
+          if (result.success) printSuccess(result.message);
+          else printError(result.error);
+          break;
+        }
+        case 'checkout': {
+          if (!gitArg) { printWarning('Usage: /git checkout <branch|file>'); break; }
+          const coCreateBranch = gitParts.includes('-b');
+          const coTarget = gitParts.slice(1).find(p => !p.startsWith('-'));
+          const result = gitCheckout({ target: coTarget, createBranch: coCreateBranch });
+          if (result.success) printSuccess(result.message);
+          else printError(result.error);
+          break;
+        }
+        case 'branch': {
+          const brParts = gitParts.slice(1);
+          if (brParts.length === 0) {
+            const result = gitBranchOp({ action: 'list', remote: true });
+            if (!result.success) { printError(result.error); break; }
+            console.log('');
+            console.log(colors.brand.bold('  Git Branches'));
+            printDivider();
+            for (const b of result.branches) {
+              const isCurrent = b.name === result.current;
+              const prefix = isCurrent ? colors.success('* ') : '  ';
+              console.log(`${prefix}${isCurrent ? colors.accent(b.name) : b.name} ${colors.dim(b.hash)}${b.upstream ? colors.dim(` → ${b.upstream} ${b.track || ''}`) : ''}`);
+            }
+            if (result.remoteBranches.length > 0) {
+              console.log(colors.dim('\n  Remote branches:'));
+              result.remoteBranches.forEach(b => console.log(`  ${colors.dim(b.name)} ${colors.dim(b.hash)}`));
+            }
+            printDivider();
+          } else if (brParts[0] === 'create') {
+            const result = gitBranchOp({ action: 'create', name: brParts[1] });
+            if (result.success) printSuccess(result.message);
+            else printError(result.error);
+          } else if (brParts[0] === 'delete') {
+            const result = gitBranchOp({ action: 'delete', name: brParts[1] });
+            if (result.success) printSuccess(result.message);
+            else printError(result.error);
+          } else if (brParts[0] === 'rename') {
+            const result = gitBranchOp({ action: 'rename', name: brParts[1], newName: brParts[2] });
+            if (result.success) printSuccess(result.message);
+            else printError(result.error);
+          } else {
+            // Treat as checkout: /git branch feature-x → switch to it
+            const result = gitBranchOp({ action: 'checkout', name: brParts[0] });
+            if (result.success) printSuccess(result.message);
+            else printError(result.error);
+          }
+          break;
+        }
+        case 'reset': {
+          const resetParts = gitParts.slice(1);
+          let mode = 'mixed';
+          let target;
+          const resetFiles = [];
+          for (const p of resetParts) {
+            if (p === '--soft') mode = 'soft';
+            else if (p === '--hard') mode = 'hard';
+            else if (p === '--mixed') mode = 'mixed';
+            else target = target || p;
+          }
+          const result = gitReset({ mode, target, files: resetFiles.length > 0 ? resetFiles : undefined });
+          if (result.success) printSuccess(result.message);
+          else printError(result.error);
+          break;
+        }
+        case 'show': {
+          const showCommit = gitParts[1] || 'HEAD';
+          const showStat = gitParts.includes('--stat');
+          const result = gitShow({ commit: showCommit, stat: showStat });
+          if (!result.success) { printError(result.error); break; }
+          console.log('');
+          printDivider();
+          const showLines = result.output.split('\n').slice(0, 60);
+          for (const line of showLines) {
+            if (line.startsWith('+') && !line.startsWith('+++')) console.log(colors.success(`  ${line}`));
+            else if (line.startsWith('-') && !line.startsWith('---')) console.log(colors.error(`  ${line}`));
+            else if (line.startsWith('@@')) console.log(colors.accent(`  ${line}`));
+            else console.log(colors.dim(`  ${line}`));
+          }
+          if (result.output.split('\n').length > 60) console.log(colors.dim(`  ... more lines`));
+          printDivider();
+          break;
+        }
+        case 'clone': {
+          if (!gitParts[1]) { printWarning('Usage: /git clone <url> [directory]'); break; }
+          const spinner = createSpinner('Cloning...');
+          spinner.start();
+          const result = gitClone({ url: gitParts[1], directory: gitParts[2] });
+          spinner.stop();
+          if (result.success) printSuccess(result.message);
+          else printError(result.error);
+          break;
+        }
+        case 'init': {
+          const result = gitInitOp({ directory: gitParts[1], bare: gitParts.includes('--bare') });
+          if (result.success) printSuccess(result.message);
+          else printError(result.error);
+          break;
+        }
+        case 'rebase': {
+          if (gitParts.includes('--abort')) {
+            const result = gitRebase({ abort: true });
+            if (result.success) printSuccess(result.message);
+            else printError(result.error);
+          } else if (gitParts.includes('--continue')) {
+            const result = gitRebase({ continue: true });
+            if (result.success) printSuccess(result.message);
+            else printError(result.error);
+          } else {
+            const rebaseBranch = gitParts[1];
+            if (!rebaseBranch) { printWarning('Usage: /git rebase <branch> [--abort|--continue]'); break; }
+            const result = gitRebase({ branch: rebaseBranch });
+            if (result.success) printSuccess(result.message);
+            else printError(result.error);
+          }
+          break;
+        }
+        case 'conflicts': {
+          const cfAction = gitParts[1] || 'list';
+          const cfFile = gitParts[2];
+          const result = gitConflicts({ action: cfAction, file: cfFile });
+          if (!result.success) { printError(result.error); break; }
+          if (result.conflicts && Array.isArray(result.conflicts)) {
+            console.log('');
+            console.log(colors.brand.bold('  Merge Conflicts'));
+            printDivider();
+            if (result.conflicts.length === 0) {
+              console.log(colors.success('  No conflicts!'));
+            } else {
+              result.conflicts.forEach(f => console.log(colors.error(`  ⚡ ${typeof f === 'string' ? f : f.file}`)));
+            }
+            printDivider();
+          } else {
+            printSuccess(result.message);
+          }
+          break;
+        }
+        default:
+          printWarning(`Unknown git command: ${gitCmd}. Type /git for help.`);
       }
       break;
     }
