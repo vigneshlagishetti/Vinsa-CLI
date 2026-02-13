@@ -1,21 +1,58 @@
-MIT License
+PROPRIETARY SOFTWARE LICENSE
+Copyright (c) 2025-2026 Lagishetti Vignesh. All Rights Reserved.
 
-Copyright (c) 2025 Lagishetti Vignesh
+1. GRANT OF USE
+   You are granted a limited, non-exclusive, non-transferable, revocable
+   license to install and use Vinsa CLI ("the Software") solely for your
+   own personal or internal business purposes via the official npm registry
+   or GitHub releases.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+2. RESTRICTIONS
+   You may NOT, without prior written permission from the copyright holder:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+   a) Copy, reproduce, duplicate, or clone the source code in whole or
+      in part, on GitHub, npm, or any other platform.
+   b) Modify, adapt, translate, reverse-engineer, decompile, or
+      disassemble the Software.
+   c) Create derivative works based on the Software.
+   d) Redistribute, sublicense, sell, lease, rent, or otherwise transfer
+      the Software or any portion thereof to any third party.
+   e) Fork the repository on GitHub or any other hosting platform.
+   f) Publish, upload, or distribute the Software (or any modified
+      version) to npm, PyPI, or any other package registry.
+   g) Remove, alter, or obscure any copyright notices, proprietary
+      legends, or branding from the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+3. INTELLECTUAL PROPERTY
+   The Software, including all source code, documentation, design,
+   architecture, algorithms, UI elements, branding, and the name "Vinsa"
+   are the exclusive intellectual property of Lagishetti Vignesh.
+
+4. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+5. LIMITATION OF LIABILITY
+   IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES,
+   OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE,
+   ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+   OTHER DEALINGS IN THE SOFTWARE.
+
+6. TERMINATION
+   This license is effective until terminated. It will terminate
+   automatically without notice if you fail to comply with any of its
+   terms. Upon termination, you must destroy all copies of the Software
+   in your possession.
+
+7. ENFORCEMENT
+   Any unauthorized copying, distribution, or use of the Software may
+   result in legal action, including but not limited to DMCA takedown
+   requests on GitHub, npm, and any other platform.
+
+8. CONTACT
+   For licensing inquiries or commercial use permissions, contact:
+   Lagishetti Vignesh
+   GitHub:   https://github.com/vigneshlagishetti
+   LinkedIn: https://www.linkedin.com/in/vignesh-lagishetti-69a102219/
+   Portfolio: https://vigneshlagishetti.me

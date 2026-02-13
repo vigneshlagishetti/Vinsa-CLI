@@ -675,11 +675,13 @@ Vinsa uses [Groq](https://groq.com) — the fastest AI inference engine — whic
 
 ## License
 
-MIT — Created by **Lagishetti Vignesh**
+**Proprietary — All Rights Reserved**
+
+Copyright (c) 2025-2026 **Lagishetti Vignesh**. Unauthorized copying, forking, redistribution, or publication of this software is strictly prohibited. See [LICENSE](LICENSE) for full terms.
 
 ---
 
 <p align="center">
-  <b>⚡ Vinsa CLI v3.0.0</b> — 11 tools · 24 MCP tools · 48 commands · 9 models · 100% free<br/>
+  <b>⚡ Vinsa CLI v3.0.1</b> — 11 tools · 24 MCP tools · 49 commands · 9 models · 100% free to use<br/>
   <i>The AI CLI that does everything, costs nothing.</i>
 </p>

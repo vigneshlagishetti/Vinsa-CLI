@@ -1,6 +1,6 @@
 {
   "name": "vinsa-cli",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Free agentic AI CLI — 9 models, 11 tools, 24 MCP tools, 49 commands, multi-agent mode, plugins, interactive command cards. Powered by Groq.",
   "type": "module",
   "main": "src/index.js",
@@ -44,7 +44,8 @@
     "developer-tools"
   ],
   "author": "Lagishetti Vignesh",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
+  "private": false,
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "chalk": "^5.4.1",
