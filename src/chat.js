@@ -26,6 +26,7 @@ import {
   printBanner, printResponse, printDivider, printPrompt, printInfo,
   printError, printSuccess, printWarning, createSpinner, colors,
   printToolCall, printToolResult, printRetry, printCommandCard, printCommandActions,
+  printTimeline, printSnapshotDiff, printAutopilotStep, printAutopilotStatus,
 } from './ui.js';
 import {
   showConfig, clearHistory, addToHistory, getApiKey, setApiKey, getModel,
@@ -36,6 +37,8 @@ import {
   getBranches, saveBranch, getBranch, deleteBranch, getActiveBranch, setActiveBranch,
   getConfirmWrites, setConfirmWrites, getHistory,
   isUsingDevKey,
+  getTeachCommands, setTeachCommand, removeTeachCommand, resolveTeachCommand,
+  saveSnapshot, getSnapshot, listSnapshots, deleteSnapshot,
 } from './config.js';
 import { undoLastChange, getFileChangeStack, setInteractiveConfirm, toolDefinitions } from './tools.js';
 import { getPluginTools, getPluginsDir, listPluginFiles, loadPlugins } from './plugins.js';
@@ -94,6 +97,12 @@ const SLASH_COMMANDS = {
   '/fetch':    'Git fetch — /fetch [--all] [--prune]',
   '/cherry-pick': 'Cherry-pick commits — /cherry-pick <hash>...',
   '/repoinfo': 'Show comprehensive repo information',
+  '/quickfix':  'AI auto-fix for the last error',
+  '/teach':     'Teach Vinsa custom commands — /teach name = command',
+  '/timeline':  'Show session activity timeline',
+  '/snapshot':  'System state capture — /snapshot [name] | /snapshot diff <a> <b>',
+  '/autopilot': 'Goal-driven AI loop — /autopilot <goal>',
+  '/explain':   'Run & explain — /explain <command>',
   '/exit':     'Exit Vinsa shell',
   '/quit':     'Exit Vinsa shell',
 };
@@ -134,6 +143,15 @@ const SHELL_LANGS = /^(?:bash|sh|powershell|ps1|cmd|bat|shell|zsh|terminal|conso
 
 // Build a Set of known tool names so we can filter them out of command cards
 const TOOL_NAMES = new Set(toolDefinitions.map(t => t.name));
+
+// ─── Session Timeline Tracker ───
+const sessionTimeline = [];
+function trackEvent(type, description, detail = '') {
+  sessionTimeline.push({ type, description, detail, timestamp: Date.now() });
+}
+
+// ─── Last Error Tracker (for /quickfix) ───
+let lastCommandError = null;   // { command, error, stderr, timestamp }
 
 /**
  * Parse a markdown response into command cards.
@@ -286,11 +304,21 @@ async function executeCommandInteractive(command) {
       console.log(colors.dim(output.trimEnd()));
     }
     printSuccess('Done.');
+    trackEvent('command', `Ran: ${command.slice(0, 60)}`, output.trim().slice(0, 100));
   } catch (err) {
     const stderr = err.stderr ? err.stderr.trim() : '';
     const stdout = err.stdout ? err.stdout.trim() : '';
     if (stdout) console.log(colors.dim(stdout));
     printError(stderr || err.message);
+    // Track error for /quickfix
+    lastCommandError = {
+      command,
+      error: err.message,
+      stderr: stderr || err.message,
+      stdout: stdout || '',
+      timestamp: Date.now(),
+    };
+    trackEvent('error', `Failed: ${command.slice(0, 60)}`, stderr.slice(0, 100));
   }
 }
 
@@ -512,6 +540,15 @@ export async function startChat({ continueSession = false } = {}) {
       continue;
     }
 
+    // ─── Teach Command Resolution ───
+    const teachResolved = resolveTeachCommand(trimmed);
+    if (teachResolved) {
+      printInfo(`  Teach → ${teachResolved}`);
+      trackEvent('teach', `Resolved: ${trimmed.split(' ')[0]}`, teachResolved.slice(0, 80));
+      await executeCommandInteractive(teachResolved);
+      continue;
+    }
+
     // ─── Alias Resolution ───
     let finalInput = trimmed;
     const aliasResolved = resolveAlias(trimmed);
@@ -519,6 +556,9 @@ export async function startChat({ continueSession = false } = {}) {
       finalInput = aliasResolved;
       printInfo(`  Alias → ${finalInput}`);
     }
+
+    // Track user query
+    trackEvent('query', trimmed.slice(0, 80));
 
     // ─── AI Chat ───
     const spinner = createSpinner('Vinsa is thinking...');
@@ -529,6 +569,7 @@ export async function startChat({ continueSession = false } = {}) {
         onToolCall: (name, args) => {
           spinner.stop();
           printToolCall(name, args);
+          trackEvent('tool', `Used ${name}`, JSON.stringify(args).slice(0, 80));
           spinner.start();
           spinner.text = colors.accent(`Running ${name}...`);
         },
@@ -560,6 +601,7 @@ export async function startChat({ continueSession = false } = {}) {
         printResponse(response);
       }
       lastResponse = response; // Track for /copy
+      trackEvent('response', 'AI responded', (response || '').slice(0, 80));
 
       // Save to persistent history
       addToHistory({ role: 'user', content: trimmed.slice(0, 200) });
@@ -2040,6 +2082,412 @@ async function handleSlashCommand(cmd, agent, mcpManager, rl) {
         }
         default:
           printWarning(`Unknown git command: ${gitCmd}. Type /git for help.`);
+      }
+      break;
+    }
+
+    // ─── /quickfix ─── Auto-fix the last command error ───
+    case '/quickfix': {
+      if (!lastCommandError) {
+        printWarning('No recent command error to fix. Run a command first.');
+        break;
+      }
+      const elapsed = Date.now() - lastCommandError.timestamp;
+      if (elapsed > 30 * 60 * 1000) {
+        printWarning('Last error is older than 30 minutes. It may be stale.');
+      }
+      console.log('');
+      console.log(colors.brand.bold('  🩹 Quick Fix'));
+      printDivider();
+      console.log(colors.dim(`  Failed command: ${lastCommandError.command}`));
+      console.log(colors.error(`  Error: ${lastCommandError.stderr.slice(0, 200)}`));
+      printDivider();
+
+      const qfPrompt = `The user ran this command and it failed. Provide a corrected command that fixes the error.
+
+Command: ${lastCommandError.command}
+Error output: ${lastCommandError.stderr}
+Stdout: ${lastCommandError.stdout.slice(0, 500)}
+OS: ${process.platform}
+CWD: ${process.cwd()}
+
+Respond with ONLY the corrected command in a code block. Add a brief one-line explanation before the code block.`;
+
+      const spinner = createSpinner('Analyzing error...');
+      spinner.start();
+      try {
+        const fixResponse = await agent.run(qfPrompt);
+        spinner.stop();
+        trackEvent('quickfix', `Fix for: ${lastCommandError.command.slice(0, 50)}`);
+        await renderWithCommandCards(rl, fixResponse);
+      } catch (e) {
+        spinner.stop();
+        printError('Could not generate fix: ' + e.message);
+      }
+      break;
+    }
+
+    // ─── /teach ─── Custom command aliases ───
+    case '/teach': {
+      if (!arg) {
+        // Show usage
+        console.log('');
+        console.log(colors.brand.bold('  📚 Teach Commands'));
+        printDivider();
+        console.log(colors.accent('  Usage:'));
+        console.log('    /teach <name> = <command>    Teach a new shortcut');
+        console.log('    /teach list                  List all taught commands');
+        console.log('    /teach remove <name>         Remove a taught command');
+        console.log('');
+        console.log(colors.dim('  Placeholders: $* (all args), $1 $2 (positional)'));
+        console.log(colors.dim('  Example: /teach deploy = npm run build && scp -r dist/ $1:/app'));
+        printDivider();
+        break;
+      }
+
+      if (arg === 'list') {
+        const cmds = getTeachCommands();
+        const keys = Object.keys(cmds);
+        console.log('');
+        console.log(colors.brand.bold('  📚 Taught Commands'));
+        printDivider();
+        if (keys.length === 0) {
+          console.log(colors.dim('  No commands taught yet. Use: /teach <name> = <command>'));
+        } else {
+          for (const k of keys) {
+            console.log(`  ${colors.accent(k)} ${colors.dim('→')} ${cmds[k]}`);
+          }
+        }
+        printDivider();
+        break;
+      }
+
+      if (arg.startsWith('remove ')) {
+        const name = arg.slice(7).trim();
+        if (!name) { printWarning('Usage: /teach remove <name>'); break; }
+        const cmds = getTeachCommands();
+        if (!cmds[name]) {
+          printWarning(`No taught command named "${name}".`);
+        } else {
+          removeTeachCommand(name);
+          printSuccess(`Removed taught command: ${name}`);
+          trackEvent('teach', `Removed: ${name}`);
+        }
+        break;
+      }
+
+      // Parse "name = command"
+      const eqIndex = arg.indexOf('=');
+      if (eqIndex === -1) {
+        printWarning('Usage: /teach <name> = <command>');
+        break;
+      }
+      const teachName = arg.slice(0, eqIndex).trim();
+      const teachCmd = arg.slice(eqIndex + 1).trim();
+      if (!teachName || !teachCmd) {
+        printWarning('Both name and command are required. Example: /teach deploy = npm run build');
+        break;
+      }
+      setTeachCommand(teachName, teachCmd);
+      printSuccess(`Taught: ${colors.accent(teachName)} → ${teachCmd}`);
+      trackEvent('teach', `Taught: ${teachName} = ${teachCmd}`);
+      break;
+    }
+
+    // ─── /timeline ─── Session activity timeline ───
+    case '/timeline': {
+      if (sessionTimeline.length === 0) {
+        printWarning('No events recorded yet in this session.');
+        break;
+      }
+      printTimeline(sessionTimeline);
+      break;
+    }
+
+    // ─── /snapshot ─── System state snapshots ───
+    case '/snapshot': {
+      const shell = process.platform === 'win32' ? 'powershell.exe' : '/bin/bash';
+
+      const captureSnapshot = () => {
+        const data = { timestamp: Date.now(), cwd: process.cwd() };
+        try {
+          if (process.platform === 'win32') {
+            data.processesRaw = execSync('Get-Process | Select-Object -First 50 Name, Id, CPU, WorkingSet | ConvertTo-Json', { encoding: 'utf-8', shell, timeout: 10000 }).trim();
+            data.portsRaw = execSync('Get-NetTCPConnection -State Listen | Select-Object -First 30 LocalPort, OwningProcess | ConvertTo-Json', { encoding: 'utf-8', shell, timeout: 10000 }).trim();
+            data.diskRaw = execSync('Get-PSDrive -PSProvider FileSystem | Select-Object Name, @{N="UsedGB";E={[math]::Round($_.Used/1GB,2)}}, @{N="FreeGB";E={[math]::Round($_.Free/1GB,2)}} | ConvertTo-Json', { encoding: 'utf-8', shell, timeout: 10000 }).trim();
+            data.memoryRaw = execSync('Get-CimInstance Win32_OperatingSystem | Select-Object @{N="TotalGB";E={[math]::Round($_.TotalVisibleMemorySize/1MB,2)}}, @{N="FreeGB";E={[math]::Round($_.FreePhysicalMemory/1MB,2)}} | ConvertTo-Json', { encoding: 'utf-8', shell, timeout: 10000 }).trim();
+          } else {
+            data.processesRaw = execSync('ps aux --sort=-%mem | head -50', { encoding: 'utf-8', shell, timeout: 10000 }).trim();
+            data.portsRaw = execSync('ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null', { encoding: 'utf-8', shell, timeout: 10000 }).trim();
+            data.diskRaw = execSync('df -h', { encoding: 'utf-8', shell, timeout: 10000 }).trim();
+            data.memoryRaw = execSync('free -h 2>/dev/null || vm_stat 2>/dev/null', { encoding: 'utf-8', shell, timeout: 10000 }).trim();
+          }
+        } catch (e) {
+          data.error = e.message;
+        }
+        // Parse structured summary for diff support
+        try {
+          const procs = JSON.parse(data.processesRaw || '[]');
+          const procsArr = Array.isArray(procs) ? procs : [procs];
+          data.processCount = procsArr.length;
+          data.topProcesses = procsArr.map(p => p.Name || p.name || '').filter(Boolean).slice(0, 20);
+        } catch { data.processCount = 0; data.topProcesses = []; }
+        try {
+          const ports = JSON.parse(data.portsRaw || '[]');
+          const portsArr = Array.isArray(ports) ? ports : [ports];
+          data.ports = portsArr.map(p => p.LocalPort || p.localPort || 0).filter(Boolean);
+        } catch { data.ports = []; }
+        try {
+          const disks = JSON.parse(data.diskRaw || '[]');
+          const disksArr = Array.isArray(disks) ? disks : [disks];
+          data.diskFreeGB = disksArr.reduce((sum, d) => sum + (d.FreeGB || 0), 0);
+        } catch { data.diskFreeGB = 0; }
+        try {
+          const mem = JSON.parse(data.memoryRaw || '{}');
+          data.memTotalGB = mem.TotalGB || 0;
+          data.memFreeGB = mem.FreeGB || 0;
+          data.memUsedGB = parseFloat((data.memTotalGB - data.memFreeGB).toFixed(2));
+        } catch { data.memUsedGB = 0; }
+        return data;
+      };
+
+      if (!arg || (!arg.startsWith('list') && !arg.startsWith('diff ') && !arg.startsWith('delete '))) {
+        // Take snapshot
+        const snapName = arg || `snap-${Date.now()}`;
+        const spinner = createSpinner('Capturing system state...');
+        spinner.start();
+        const snapData = captureSnapshot();
+        spinner.stop();
+        saveSnapshot(snapName, snapData);
+        printSuccess(`Snapshot saved: ${colors.accent(snapName)}`);
+        console.log(colors.dim(`  Timestamp: ${new Date(snapData.timestamp).toLocaleString()}`));
+        console.log(colors.dim(`  CWD: ${snapData.cwd}`));
+        if (snapData.error) printWarning(`Partial capture: ${snapData.error}`);
+        trackEvent('snapshot', `Captured: ${snapName}`);
+        break;
+      }
+
+      if (arg === 'list') {
+        const snaps = listSnapshots();
+        console.log('');
+        console.log(colors.brand.bold('  📸 Saved Snapshots'));
+        printDivider();
+        if (snaps.length === 0) {
+          console.log(colors.dim('  No snapshots saved. Use: /snapshot [name]'));
+        } else {
+          for (const s of snaps) {
+            const snap = getSnapshot(s);
+            const ts = snap && snap.timestamp ? new Date(snap.timestamp).toLocaleString() : 'unknown';
+            const procs = snap && snap.processCount != null ? ` | ${snap.processCount} procs` : '';
+            console.log(`  ${colors.accent(s)} ${colors.dim(`— ${ts}${procs}`)}`);
+          }
+        }
+        printDivider();
+        break;
+      }
+
+      if (arg.startsWith('delete ')) {
+        const dName = arg.slice(7).trim();
+        if (!dName) { printWarning('Usage: /snapshot delete <name>'); break; }
+        if (!getSnapshot(dName)) {
+          printWarning(`No snapshot named "${dName}".`);
+        } else {
+          deleteSnapshot(dName);
+          printSuccess(`Deleted snapshot: ${dName}`);
+        }
+        break;
+      }
+
+      if (arg.startsWith('diff ')) {
+        const diffParts = arg.slice(5).trim().split(/\s+/);
+        if (diffParts.length < 2) {
+          printWarning('Usage: /snapshot diff <name1> <name2>');
+          break;
+        }
+        const [name1, name2] = diffParts;
+        const snap1 = getSnapshot(name1);
+        const snap2 = getSnapshot(name2);
+        if (!snap1) { printWarning(`Snapshot "${name1}" not found.`); break; }
+        if (!snap2) { printWarning(`Snapshot "${name2}" not found.`); break; }
+        printSnapshotDiff(snap1, snap2);
+        trackEvent('snapshot', `Diff: ${name1} vs ${name2}`);
+        break;
+      }
+      break;
+    }
+
+    // ─── /autopilot ─── Goal-driven AI loop ───
+    case '/autopilot': {
+      if (!arg) {
+        printWarning('Usage: /autopilot <goal>');
+        console.log(colors.dim('  Example: /autopilot set up a Node.js project with TypeScript and ESLint'));
+        break;
+      }
+
+      console.log('');
+      console.log(colors.brand.bold('  🚀 Autopilot Mode'));
+      printDivider();
+      console.log(colors.accent(`  Goal: ${arg}`));
+      printDivider();
+
+      const planPrompt = `You are an autopilot assistant. The user wants to achieve this goal:
+"${arg}"
+
+Break this into a numbered list of concrete, executable steps. Each step should be a single shell command or a brief action.
+Format EXACTLY like this (no other text):
+1. <description> :: <command>
+2. <description> :: <command>
+
+If a step doesn't need a command (e.g., "verify output"), use "MANUAL" as the command.
+Keep it to 10 steps maximum. Be specific and practical for ${process.platform === 'win32' ? 'Windows PowerShell' : 'Linux/macOS bash'}.`;
+
+      const planSpinner = createSpinner('Planning steps...');
+      planSpinner.start();
+      let planResponse;
+      try {
+        planResponse = await agent.run(planPrompt);
+        planSpinner.stop();
+      } catch (e) {
+        planSpinner.stop();
+        printError('Failed to plan: ' + e.message);
+        break;
+      }
+
+      // Parse steps: "N. description :: command"
+      const stepLines = planResponse.split('\n').filter(l => /^\d+\.\s/.test(l.trim()));
+      if (stepLines.length === 0) {
+        printWarning('Could not parse steps. Showing raw plan:');
+        console.log(planResponse);
+        break;
+      }
+
+      const steps = stepLines.map(line => {
+        const match = line.match(/^\d+\.\s*(.+?)\s*::\s*(.+)$/);
+        if (match) return { description: match[1].trim(), command: match[2].trim() };
+        return { description: line.replace(/^\d+\.\s*/, '').trim(), command: 'MANUAL' };
+      });
+
+      console.log('');
+      console.log(colors.accent(`  📋 Plan (${steps.length} steps):`));
+      steps.forEach((s, i) => {
+        console.log(`  ${colors.dim(`${i + 1}.`)} ${s.description}`);
+        if (s.command !== 'MANUAL') console.log(`     ${colors.dim('$')} ${colors.cyan(s.command)}`);
+      });
+      console.log('');
+
+      trackEvent('autopilot', `Started: ${arg.slice(0, 60)}`, `${steps.length} steps`);
+
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i];
+        printAutopilotStep(i + 1, steps.length, step.description);
+
+        if (step.command === 'MANUAL') {
+          console.log(colors.dim('  (Manual step — review and continue)'));
+          const cont = await new Promise(resolve => {
+            rl.question(colors.accent('  Continue? (y/n/skip) '), resolve);
+          });
+          if (cont.toLowerCase() === 'n') {
+            printAutopilotStatus('stopped');
+            trackEvent('autopilot', 'User stopped at step ' + (i + 1));
+            break;
+          }
+          if (cont.toLowerCase() === 'skip') continue;
+          continue;
+        }
+
+        console.log(colors.dim(`  $ ${step.command}`));
+        const action = await new Promise(resolve => {
+          rl.question(colors.accent('  Run? (y/n/skip/edit) '), resolve);
+        });
+
+        if (action.toLowerCase() === 'n') {
+          printAutopilotStatus('stopped');
+          trackEvent('autopilot', 'User stopped at step ' + (i + 1));
+          break;
+        }
+        if (action.toLowerCase() === 'skip') {
+          console.log(colors.dim('  Skipped.'));
+          continue;
+        }
+
+        let cmdToRun = step.command;
+        if (action.toLowerCase() === 'edit') {
+          cmdToRun = await questionPrefilled(rl, colors.accent('  Command: '), step.command);
+          if (!cmdToRun.trim()) { console.log(colors.dim('  Skipped.')); continue; }
+        }
+
+        await executeCommandInteractive(cmdToRun);
+      }
+
+      printAutopilotStatus('completed');
+      trackEvent('autopilot', `Completed: ${arg.slice(0, 60)}`);
+      break;
+    }
+
+    // ─── /explain ─── Run command & get plain-English explanation ───
+    case '/explain': {
+      if (!arg) {
+        printWarning('Usage: /explain <command>');
+        console.log(colors.dim('  Example: /explain netstat -tlnp'));
+        console.log(colors.dim('  Example: /explain git log --oneline -10'));
+        break;
+      }
+
+      console.log('');
+      console.log(colors.brand.bold('  🔍 Explain'));
+      printDivider();
+      console.log(colors.dim(`  Running: ${arg}`));
+
+      let cmdOutput = '';
+      let cmdError = '';
+      try {
+        const shell = process.platform === 'win32' ? 'powershell.exe' : '/bin/bash';
+        cmdOutput = execSync(arg, {
+          encoding: 'utf-8',
+          timeout: 30000,
+          cwd: process.cwd(),
+          shell,
+          maxBuffer: 1024 * 1024 * 5,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }).trim();
+      } catch (e) {
+        cmdOutput = e.stdout ? e.stdout.trim() : '';
+        cmdError = e.stderr ? e.stderr.trim() : e.message;
+      }
+
+      if (cmdOutput) {
+        const preview = cmdOutput.split('\n').slice(0, 10).join('\n');
+        console.log(colors.dim(preview));
+        if (cmdOutput.split('\n').length > 10) console.log(colors.dim(`  ... (${cmdOutput.split('\n').length} lines total)`));
+      }
+      if (cmdError) {
+        console.log(colors.error(cmdError.split('\n').slice(0, 5).join('\n')));
+      }
+      printDivider();
+
+      const explainPrompt = `Explain this command and its output in plain English. Be concise and helpful.
+
+Command: ${arg}
+Output:
+${cmdOutput.slice(0, 3000)}
+${cmdError ? `\nErrors:\n${cmdError.slice(0, 1000)}` : ''}
+
+Explain:
+1. What the command does
+2. Key findings from the output
+3. Any issues or warnings spotted`;
+
+      const spinner = createSpinner('Analyzing...');
+      spinner.start();
+      try {
+        const explanation = await agent.run(explainPrompt);
+        spinner.stop();
+        console.log('');
+        await renderWithCommandCards(rl, explanation);
+        trackEvent('explain', `Explained: ${arg.slice(0, 50)}`);
+      } catch (e) {
+        spinner.stop();
+        printError('Could not explain: ' + e.message);
       }
       break;
     }

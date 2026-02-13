@@ -33,6 +33,8 @@ const config = new Conf({
     conversationBranches: { type: 'object', default: {} },
     activeBranch: { type: 'string', default: 'main' },
     confirmWrites: { type: 'boolean', default: false },
+    teachCommands: { type: 'object', default: {} },
+    snapshots: { type: 'object', default: {} },
   },
 });
 
@@ -268,6 +270,8 @@ export function showConfig() {
   const sessions = listSessions();
   const aliases = getAliases();
   const branches = getBranches();
+  const teach = getTeachCommands();
+  const snaps = getSnapshots();
   return {
     apiKey: maskedKey,
     model: getModel(),
@@ -276,12 +280,68 @@ export function showConfig() {
     confirmWrites: getConfirmWrites() ? 'ON' : 'off',
     activeBranch: getActiveBranch(),
     aliases: Object.keys(aliases).length,
+    teachCommands: Object.keys(teach).length,
+    snapshots: Object.keys(snaps).length,
     mcpServers: Object.keys(getMcpServers()),
     savedSessions: Object.keys(sessions).length,
     branches: Object.keys(branches).length,
     configPath: getConfigPath(),
     historyCount: getHistory().length,
   };
+}
+
+// ─── Teach Commands (persistent custom shortcuts) ───
+export function getTeachCommands() {
+  return config.get('teachCommands') || {};
+}
+
+export function setTeachCommand(name, command) {
+  const cmds = getTeachCommands();
+  cmds[name] = { command, createdAt: Date.now() };
+  config.set('teachCommands', cmds);
+}
+
+export function removeTeachCommand(name) {
+  const cmds = getTeachCommands();
+  delete cmds[name];
+  config.set('teachCommands', cmds);
+}
+
+export function resolveTeachCommand(input) {
+  const cmds = getTeachCommands();
+  const parts = input.split(' ');
+  const name = parts[0];
+  if (cmds[name]) {
+    const rest = parts.slice(1).join(' ');
+    return cmds[name].command.replace(/\$\*/g, rest).replace(/\$1/g, parts[1] || '').replace(/\$2/g, parts[2] || '');
+  }
+  return null;
+}
+
+// ─── Snapshots (system state captures) ───
+export function getSnapshots() {
+  return config.get('snapshots') || {};
+}
+
+export function saveSnapshot(name, data) {
+  const snaps = getSnapshots();
+  snaps[name] = data; // data already contains timestamp
+  config.set('snapshots', snaps);
+}
+
+export function getSnapshot(name) {
+  const snaps = getSnapshots();
+  return snaps[name] || null;
+}
+
+export function deleteSnapshot(name) {
+  const snaps = getSnapshots();
+  delete snaps[name];
+  config.set('snapshots', snaps);
+}
+
+export function listSnapshots() {
+  return Object.keys(getSnapshots());
 }
 
 export default config;

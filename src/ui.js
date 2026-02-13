@@ -166,6 +166,109 @@ export function printCommandActions() {
   );
 }
 
+// ─── Timeline Display ───
+export function printTimeline(events) {
+  console.log('');
+  console.log(colors.brand.bold('  Session Timeline'));
+  console.log(colors.dim('  ═'.repeat(30)));
+  if (events.length === 0) {
+    console.log(colors.dim('  No events yet.'));
+    return;
+  }
+  const startTime = events[0].timestamp;
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
+    const elapsed = Math.round((e.timestamp - startTime) / 1000);
+    const mins = Math.floor(elapsed / 60);
+    const secs = elapsed % 60;
+    const time = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    const isLast = i === events.length - 1;
+    const connector = isLast ? '└' : '├';
+    const line = isLast ? ' ' : '│';
+
+    // Icon by event type
+    const icons = {
+      'query': '💬', 'tool': '🔧', 'response': '🤖', 'command': '⚡',
+      'error': '❌', 'quickfix': '🩹', 'teach': '📚', 'snapshot': '📸',
+      'autopilot': '🚀', 'explain': '🔍',
+    };
+    const icon = icons[e.type] || '●';
+
+    console.log(colors.dim(`  ${connector}── `) + colors.accent(time) + `  ${icon}  ` + e.description);
+    if (e.detail) {
+      console.log(colors.dim(`  ${line}       `) + colors.dim(e.detail.slice(0, 80)));
+    }
+  }
+  console.log(colors.dim('  ═'.repeat(30)));
+  console.log(colors.dim(`  ${events.length} events recorded`));
+}
+
+// ─── Snapshot Display ───
+export function printSnapshotDiff(before, after) {
+  console.log('');
+  console.log(colors.brand.bold('  Snapshot Diff'));
+  console.log(colors.dim('  ═'.repeat(30)));
+
+  // Process count diff
+  const procBefore = before.processCount || 0;
+  const procAfter = after.processCount || 0;
+  const procDiff = procAfter - procBefore;
+  const procColor = procDiff > 0 ? colors.warning : procDiff < 0 ? colors.success : colors.dim;
+  console.log(`  ${colors.accent('Processes'.padEnd(18))} ${procBefore} → ${procAfter} ${procColor(`(${procDiff > 0 ? '+' : ''}${procDiff})`)}`);
+
+  // Port diff
+  const portsBefore = new Set(before.ports || []);
+  const portsAfter = new Set(after.ports || []);
+  const newPorts = [...portsAfter].filter(p => !portsBefore.has(p));
+  const closedPorts = [...portsBefore].filter(p => !portsAfter.has(p));
+  if (newPorts.length > 0) console.log(`  ${colors.success('+ New ports'.padEnd(18))} ${newPorts.join(', ')}`);
+  if (closedPorts.length > 0) console.log(`  ${colors.error('- Closed ports'.padEnd(18))} ${closedPorts.join(', ')}`);
+  if (newPorts.length === 0 && closedPorts.length === 0) console.log(`  ${colors.accent('Ports'.padEnd(18))} ${colors.dim('no change')}`);
+
+  // Disk diff
+  if (before.diskFreeGB && after.diskFreeGB) {
+    const diskDiff = (after.diskFreeGB - before.diskFreeGB).toFixed(2);
+    const diskColor = parseFloat(diskDiff) < 0 ? colors.warning : colors.success;
+    console.log(`  ${colors.accent('Disk Free'.padEnd(18))} ${before.diskFreeGB} GB → ${after.diskFreeGB} GB ${diskColor(`(${parseFloat(diskDiff) > 0 ? '+' : ''}${diskDiff} GB)`)}`);
+  }
+
+  // Memory diff
+  if (before.memUsedGB && after.memUsedGB) {
+    const memDiff = (after.memUsedGB - before.memUsedGB).toFixed(2);
+    const memColor = parseFloat(memDiff) > 0 ? colors.warning : colors.success;
+    console.log(`  ${colors.accent('Memory Used'.padEnd(18))} ${before.memUsedGB} GB → ${after.memUsedGB} GB ${memColor(`(${parseFloat(memDiff) > 0 ? '+' : ''}${memDiff} GB)`)}`);
+  }
+
+  // New/closed processes
+  const procNamesBefore = new Set(before.topProcesses || []);
+  const procNamesAfter = new Set(after.topProcesses || []);
+  const newProcs = [...procNamesAfter].filter(p => !procNamesBefore.has(p));
+  const goneProcs = [...procNamesBefore].filter(p => !procNamesAfter.has(p));
+  if (newProcs.length > 0) {
+    console.log(`  ${colors.success('+ New processes')}`);
+    newProcs.slice(0, 10).forEach(p => console.log(`    ${colors.success('+')} ${p}`));
+  }
+  if (goneProcs.length > 0) {
+    console.log(`  ${colors.error('- Gone processes')}`);
+    goneProcs.slice(0, 10).forEach(p => console.log(`    ${colors.error('-')} ${p}`));
+  }
+  console.log(colors.dim('  ═'.repeat(30)));
+}
+
+// ─── Autopilot Display ───
+export function printAutopilotStep(stepNum, totalSteps, description) {
+  console.log('');
+  console.log(
+    chalk.bgHex('#7C3AED').white.bold(` STEP ${stepNum}/${totalSteps} `) + '  ' +
+    colors.bold(description)
+  );
+}
+
+export function printAutopilotStatus(status) {
+  const icon = status === 'complete' ? '✅' : status === 'aborted' ? '🛑' : '⏳';
+  console.log(`  ${icon} Autopilot ${status}`);
+}
+
 export function printSystemInfo(info) {
   console.log('');
   console.log(colors.brand.bold('  System Information'));
