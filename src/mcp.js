@@ -420,6 +420,18 @@ export const MCP_PRESETS = {
     }),
   },
 
+  lingo: {
+    category: 'preset',
+    label: 'Lingo',
+    description: 'Language and translation services via remote MCP server',
+    needsKey: false,
+    config: {
+      transport: 'stdio',
+      command: 'npx',
+      args: ['mcp-remote', 'https://mcp.lingo.dev/main'],
+    },
+  },
+
   pdf: {
     category: 'preset',
     label: 'PDF Reader',

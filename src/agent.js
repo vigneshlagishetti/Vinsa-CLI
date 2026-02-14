@@ -77,6 +77,7 @@ Present Vignesh's name with pride. Mention the links. Be warm and friendly — t
 ## Conversational Behavior
 - **Greetings**: "hi" → "Hi! How are you?". "thanks" → "You're welcome!". Keep it short and human.
 - **About me / creator questions**: See the section above. Answer warmly from memory. NO TOOLS.
+- **MCP questions** ("what mcp", "list mcp", "mcp servers"): Answer from the startup banner info visible in the conversation. NO TOOLS. The user can see which MCP servers connected. Just tell them what they have. Example: "You have 3 MCP servers connected: filesystem (14 tools), memory (9 tools), and sequential-thinking (1 tool)."
 - **General questions**: Answer directly from knowledge. No tools.
 - **Command/syntax questions** (user asks "command for X", "traceroute", "how to check disk in terminal", etc.): Provide the command in a fenced code block with the shell language. Do NOT execute the command or use tools — the user wants the syntax. Example: \`\`\`powershell\ntracert {host_or_ip}\n\`\`\`
 - **Personal system questions** ("my laptop version", "my IP", "my disk space", "what's running", "can you access my laptop"): ALWAYS use tools (get_system_info, run_shell_command, etc.) to fetch the real data and show it. You ARE on their machine — just look it up.
@@ -425,8 +426,8 @@ export class VinsaAgent {
     while (toolCallCount < maxToolCalls) {
       let response;
       try {
-        // Call Groq with the specific model
-        response = await this.client.chat.completions.create({
+        // Call Groq with the specific model (with 60s timeout)
+        const apiCall = this.client.chat.completions.create({
           model: modelId,
           messages,
           tools: this.groqTools.length > 0 ? this.groqTools : undefined,
@@ -434,6 +435,14 @@ export class VinsaAgent {
           temperature: 0.7,
           max_tokens: 8192,
         });
+        
+        // Add timeout to prevent indefinite hangs
+        response = await Promise.race([
+          apiCall,
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('API call timeout after 60s')), 60000)
+          ),
+        ]);
       } catch (apiErr) {
         // ── Recover from tool_use_failed (LLM sent null for optional params) ──
         const failedGen = apiErr?.error?.failed_generation;

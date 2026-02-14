@@ -1,4 +1,13 @@
 /**
+ * Set the entire MCP configuration (for Settings UI integration)
+ * @param {object} mcpConfig - The full MCP config object (should have mcpServers key)
+ */
+export function setMcpConfig(mcpConfig) {
+  if (mcpConfig && typeof mcpConfig === 'object' && mcpConfig.mcpServers) {
+    config.set('mcpServers', mcpConfig.mcpServers);
+  }
+}
+/**
  * Vinsa CLI — Configuration Manager
  * Stores API keys and settings in the user's home directory.
  * No .env file needed for end users — they run `vinsa config set-key <key>`.

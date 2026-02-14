@@ -60,7 +60,7 @@ const SLASH_COMMANDS = {
   '/clear':    'Clear conversation history',
   '/tools':    'List all available tools',
   '/models':   'Show model rotation status & available models',
-  '/mcp':      'Show MCP server status',
+  '/mcp':      'Show MCP servers & available presets · Manage: vinsa mcp add/remove/list',
   '/system':   'Show system information',
   '/config':   'Show current configuration',
   '/history':  'Show conversation history summary',
@@ -579,7 +579,7 @@ export async function startChat({ continueSession = false } = {}) {
           spinner.stop();
           printToolResult(result);
           spinner.start();
-          spinner.text = colors.accent('Vinsa is thinking...');
+          spinner.text = colors.accent('Processing results...');
         },
         onRetry: (attempt, max, reason) => {
           spinner.stop();
@@ -775,9 +775,19 @@ async function handleSlashCommand(cmd, agent, mcpManager, rl) {
           const keyInfo = preset.needsKey ? colors.dim(` [needs ${preset.keyName}]`) : colors.success(' [free]');
           console.log(`  ${colors.dim('○')} ${colors.accent(key.padEnd(24))} ${preset.description}${keyInfo}`);
         }
-        console.log('');
-        console.log(colors.dim('  Add: vinsa mcp add <name>  |  e.g. vinsa mcp add playwright'));
       }
+      
+      // MCP Management Commands
+      console.log('');
+      console.log(colors.brand.bold('  MCP Management Commands'));
+      printDivider();
+      console.log(colors.dim('  vinsa mcp add <name>       ') + 'Add MCP server from presets');
+      console.log(colors.dim('  vinsa mcp add <name> --key ') + 'Add server & prompt for API key');
+      console.log(colors.dim('  vinsa mcp remove <name>    ') + 'Remove an MCP server');
+      console.log(colors.dim('  vinsa mcp list             ') + 'List all configured & available servers');
+      console.log('');
+      console.log(colors.dim('  Presets: lingo, brave-search, github, playwright, gitlab, etc.'));
+      console.log(colors.dim('  Note: Postman MCP tools are VS Code/Copilot exclusive'));
       printDivider();
       break;
     }
